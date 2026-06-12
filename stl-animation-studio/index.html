@@ -1,0 +1,1250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STL Animation Studio — declarative · verifiable trajectory animation</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#141a23; --card:#1a2230; --card2:#1f2937;
+    --ink:#e6edf3; --dim:#8b98a9; --accent:#4fc3f7; --ok:#2dd4a0; --bad:#ff5d6c;
+    --line:#26303f;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:14px/1.45 -apple-system,"SF Pro Text",Inter,"Segoe UI",sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  header{
+    display:flex; align-items:center; gap:10px; padding:10px 16px;
+    border-bottom:1px solid var(--line); flex-wrap:wrap;
+  }
+  .brand{font-weight:700; font-size:15px; letter-spacing:.2px;}
+  .brand .sub{font-weight:400; color:var(--dim); font-size:12px; margin-left:8px;}
+  header .grow{flex:1;}
+  select,button{
+    background:var(--card); color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; padding:6px 11px; font:inherit; font-size:13px; cursor:pointer;
+  }
+  button:hover{border-color:#3a4759;}
+  button.primary{background:#103246; border-color:#1d567a; color:#aee3ff;}
+  button.armed{background:#3a2c10; border-color:#8a6a1e; color:#ffd479;}
+  header label{color:var(--dim); font-size:12.5px; display:flex; gap:5px; align-items:center; cursor:pointer;}
+  main{flex:1; display:flex; min-height:0;}
+  #stage{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:14px; min-width:0; gap:10px;}
+  #cv{
+    width:min(100%, calc((100vh - 170px) * 1.4642)); max-width:980px;
+    border-radius:14px; border:1px solid var(--line);
+    box-shadow:0 14px 50px rgba(0,0,0,.45);
+    cursor:crosshair;
+  }
+  #transport{display:flex; align-items:center; gap:10px; width:min(100%,980px);}
+  #playBtn{width:38px;}
+  #tl{flex:1; height:30px; border-radius:8px; background:var(--card); border:1px solid var(--line); cursor:pointer;}
+  #tlabel{color:var(--dim); font-size:12px; min-width:84px; text-align:right; font-variant-numeric:tabular-nums;}
+  #solverInfo{color:var(--dim); font-size:12px; width:min(100%,980px); display:flex; gap:14px; font-variant-numeric:tabular-nums;}
+  #panel{
+    width:368px; border-left:1px solid var(--line); background:var(--panel);
+    display:flex; flex-direction:column; min-height:0;
+  }
+  #cert{
+    margin:12px; padding:11px 13px; border-radius:10px; font-weight:600; font-size:13.5px;
+    border:1px solid;
+  }
+  #cert.ok{background:rgba(45,212,160,.08); border-color:rgba(45,212,160,.45); color:var(--ok);}
+  #cert.bad{background:rgba(255,93,108,.08); border-color:rgba(255,93,108,.45); color:var(--bad);}
+  #cert .sub{display:block; font-weight:400; font-size:11.5px; color:var(--dim); margin-top:3px;}
+  #cards{flex:1; overflow-y:auto; padding:0 12px 12px;}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:10px;
+    padding:10px 12px; margin-bottom:10px;
+  }
+  .card.sel{border-color:var(--accent);}
+  .card .top{display:flex; align-items:center; gap:8px;}
+  .card .name{font-weight:600; font-size:13px; flex:1;}
+  .card .name .kind{color:var(--dim); font-weight:400; font-size:11.5px;}
+  .chip{
+    font:600 11.5px/1 ui-monospace,Menlo,monospace; padding:4px 7px; border-radius:6px;
+    font-variant-numeric:tabular-nums;
+  }
+  .chip.ok{background:rgba(45,212,160,.12); color:var(--ok);}
+  .chip.bad{background:rgba(255,93,108,.14); color:var(--bad);}
+  .formula{
+    font:12px/1.5 ui-monospace,Menlo,monospace; color:#a9c7e8;
+    background:#10161f; border-radius:6px; padding:5px 8px; margin:8px 0 6px;
+    overflow-x:auto; white-space:nowrap;
+  }
+  .row{display:flex; align-items:center; gap:8px; margin-top:5px; color:var(--dim); font-size:12px; flex-wrap:wrap;}
+  .row label{display:flex; align-items:center; gap:6px;}
+  .row input[type=range]{width:86px; accent-color:var(--accent);}
+  .row input[type=number]{
+    width:46px; background:#10161f; color:var(--ink); border:1px solid var(--line);
+    border-radius:5px; padding:2px 4px; font:inherit; font-size:12px;
+  }
+  .row select{
+    background:#10161f; color:var(--ink); border:1px solid var(--line);
+    border-radius:5px; padding:2px 4px; font:inherit; font-size:12px;
+  }
+  .row .v{min-width:30px; font-variant-numeric:tabular-nums; color:var(--ink);}
+  .gchip{
+    border-radius:99px; padding:2px 9px; font-size:11.5px; border:1px solid var(--line);
+    background:transparent; color:var(--dim);
+  }
+  .gchip.on{color:#06121c; font-weight:700;}
+  .wit{display:flex; align-items:center; gap:8px; margin-top:7px; font-size:11.5px; color:var(--dim);}
+  .wit button{padding:2px 8px; font-size:11px; border-radius:6px;}
+  .del{margin-left:auto; color:var(--dim); background:transparent; border:none; font-size:14px; padding:2px 4px;}
+  .del:hover{color:var(--bad);}
+  .tgl{width:30px; height:17px; appearance:none; background:#2a3342; border-radius:99px; position:relative; cursor:pointer; outline:none; flex:none;}
+  .tgl:checked{background:var(--accent);}
+  .tgl::after{content:""; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:50%; background:#fff; transition:left .15s;}
+  .tgl:checked::after{left:15px;}
+  #foot{padding:10px 14px; border-top:1px solid var(--line); color:var(--dim); font-size:11.5px;}
+  #foot b{color:#b9c6d8;}
+  ::-webkit-scrollbar{width:9px;} ::-webkit-scrollbar-thumb{background:#2a3342; border-radius:6px;}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">STL Animation Studio<span class="sub">declarative · verifiable trajectory animation</span></div>
+  <div class="grow"></div>
+  <select id="preset" title="Preset scene">
+    <option value="default">Converge → travel → diverge</option>
+    <option value="detour">Detour around a region</option>
+    <option value="stagger">Staggered windows</option>
+    <option value="until">Precedence (Until)</option>
+    <option value="birdmap">Bird migration (RouteFlow data)</option>
+  </select>
+  <button id="regen" title="Resample start/end positions">↻ data</button>
+  <button id="importBtn" title="Import a scene JSON or a raw trajectory dataset (array of [x,y] polylines)">↑ import</button>
+  <button id="exportBtn" title="Export scene JSON (data + specs + optimized trajectories) for the stljax pipeline">↓ export</button>
+  <input type="file" id="fileInput" accept=".json,application/json" style="display:none">
+  <button id="addHotspot" title="Click the canvas to place a hotspot (an Eventually-reach spec)">+ hotspot</button>
+  <button id="addAvoid" title="Click the canvas to place a forbidden region (an Always-avoid spec)">+ avoid region</button>
+  <button id="addPrecede" title="Add an Until-based ordering spec: one group must reach a hotspot before another">+ precedence</button>
+  <button id="solveBtn" class="primary">⏸ solver on</button>
+  <button id="resetBtn" title="Reset trajectories to the raw input data">reset</button>
+  <label><input type="checkbox" id="showPaths" checked> routes</label>
+  <label><input type="checkbox" id="showGhost"> input data</label>
+</header>
+<main>
+  <section id="stage">
+    <canvas id="cv"></canvas>
+    <div id="transport">
+      <button id="playBtn">⏸</button>
+      <canvas id="tl"></canvas>
+      <span id="tlabel"></span>
+    </div>
+    <div id="solverInfo"><span id="iterInfo">iter 0</span><span id="lossInfo">loss —</span><span id="hintInfo">tip: drag a hotspot while the solver runs — the animation re-forms live</span></div>
+  </section>
+  <aside id="panel">
+    <div id="cert"></div>
+    <div id="cards"></div>
+    <div id="foot">
+      Specs are <b>Signal Temporal Logic</b> over object positions p<sub>i</sub>(t).
+      <b>ρ</b> is the exact robustness margin (px): <b>ρ &gt; 0 certifies</b> the animation satisfies the
+      spec; ρ &lt; 0 points at the worst violation. The solver runs gradient descent on smooth robustness
+      losses (stljax-style differentiable STL).
+    </div>
+  </aside>
+</main>
+
+<script>
+"use strict";
+/* ================= world / state ================= */
+const W = 820, H = 560, K = 60;
+const TAU = 4, TAUE = 8, MARGIN = 2, SMOOTH_MARGIN = 0.5;
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const tl = document.getElementById('tl'), tctx = tl.getContext('2d');
+const dpr = window.devicePixelRatio || 1;
+cv.width = W*dpr; cv.height = H*dpr; ctx.scale(dpr,dpr);
+
+const PALETTE = {A:'#4fc3f7', B:'#ffb74d', C:'#b388ff', D:'#81c784'};
+
+let groups = [];      // {id,color,count,start:{x,y},end:{x,y}}
+let objects = [];     // {g, color, start:[x,y], end:[x,y]}
+let constraints = []; // see types below
+let N = 0;
+let P, P0;            // Float64Array(N*K*2): optimized / raw input
+let adamM, adamV, G;  // optimizer state, gradient
+let iter = 0, lastLoss = 0;
+let pinned = true;   // presets pin endpoints exactly; imported data uses a soft anchor spec instead
+let solving = true, playing = true;
+let u = 0;            // playhead in [0, K-1]
+let mode = null;      // 'hotspot' | 'avoid' | null
+let sel = null, dragC = null, scrubbing = false;
+let flash = null;     // {ids:[..], until}
+let hsCounter = 0, avCounter = 0;
+
+const idx = (i,t) => (i*K + t)*2;
+const sigmoid = x => 1/(1+Math.exp(-x));
+const softplus = x => x > 30 ? x : Math.log1p(Math.exp(x));
+const fmt = x => (x>=0?'+':'') + x.toFixed(1);
+const clamp = (x,a,b) => Math.max(a, Math.min(b,x));
+
+/* ================= data generation ================= */
+function samplePoint(cx, cy, r, placed, minD){
+  for(let k=0;k<400;k++){
+    const a = Math.random()*Math.PI*2, rr = r*Math.sqrt(Math.random());
+    const x = cx + rr*Math.cos(a), y = cy + rr*Math.sin(a);
+    let ok = true;
+    for(const p of placed){ if(Math.hypot(p[0]-x,p[1]-y) < minD){ ok=false; break; } }
+    if(ok) return [x,y];
+  }
+  return [cx + (Math.random()-.5)*r, cy + (Math.random()-.5)*r];
+}
+
+function makeObjects(){
+  objects = [];
+  const starts = [], ends = [];
+  for(const g of groups){
+    for(let k=0;k<g.count;k++){
+      const s = samplePoint(g.start.x, g.start.y, 38, starts, 16);
+      const e = samplePoint(g.end.x, g.end.y, 36, ends, 16);
+      starts.push(s); ends.push(e);
+      objects.push({g:g.id, color:g.color, start:s, end:e});
+    }
+  }
+  N = objects.length;
+}
+
+function initTrajectories(){
+  P = new Float64Array(N*K*2);
+  for(let i=0;i<N;i++){
+    const o = objects[i];
+    const amp = (Math.random()-.5)*36;
+    for(let t=0;t<K;t++){
+      const s = t/(K-1);
+      P[idx(i,t)]   = o.start[0] + s*(o.end[0]-o.start[0]);
+      P[idx(i,t)+1] = o.start[1] + s*(o.end[1]-o.start[1]) + amp*Math.sin(Math.PI*s);
+    }
+  }
+  P0 = P.slice();
+  adamM = new Float64Array(N*K*2); adamV = new Float64Array(N*K*2);
+  G = new Float64Array(N*K*2);
+  iter = 0;
+}
+
+/* ================= constraints =================
+ types:
+  reach      {x,y,r,t1,t2,groups[]}          F[t1,t2] ||p_i - h|| <= r        for all i in groups
+  together   {dmax,t1,t2,groups[]}           G[t1,t2] ||p_i - p_j|| <= dmax   for all i,j in groups
+  separation {dmin}                          G[0,K-1] ||p_i - p_j|| >= dmin   for all i != j
+  smooth     {amax}                          G[1,K-2] ||p''_i|| <= amax       for all i
+  avoid      {x,y,r}                         G[0,K-1] ||p_i - c|| >= r        for all i
+*/
+function members(c){
+  if(!c.groups) return objects.map((_,i)=>i);
+  const out = [];
+  objects.forEach((o,i)=>{ if(c.groups.includes(o.g)) out.push(i); });
+  return out;
+}
+function groupMembers(gid){
+  const out = [];
+  objects.forEach((o,i)=>{ if(o.g === gid) out.push(i); });
+  return out;
+}
+function centroidAt(mem, t){
+  let x=0, y=0;
+  for(const i of mem){ x += P[idx(i,t)]; y += P[idx(i,t)+1]; }
+  return [x/mem.length, y/mem.length];
+}
+function resolveHotspot(c){
+  return constraints.find(x => x.id === c.hotspot && x.type === 'reach' && x.enabled) || null;
+}
+function groupStr(c){
+  if(!c.groups || c.groups.length === groups.length) return 'all';
+  return c.groups.join(',');
+}
+function formula(c){
+  switch(c.type){
+    case 'reach':      return `F[${c.t1},${c.t2}] ‖p_i − ${c.label}‖ ≤ ${Math.round(c.r)}   ∀ i ∈ ${groupStr(c)}`;
+    case 'together':   return `G[${c.t1},${c.t2}] ‖p_i − p_j‖ ≤ ${Math.round(c.dmax)}   ∀ i,j ∈ ${groupStr(c)}`;
+    case 'separation': return `G[0,${K-1}] ‖p_i − p_j‖ ≥ ${Math.round(c.dmin)}   ∀ i ≠ j`;
+    case 'smooth':     return `G[1,${K-2}] ‖p̈_i‖ ≤ ${c.amax.toFixed(1)}   ∀ i`;
+    case 'avoid':      return `G[0,${K-1}] ‖p_i − ${c.label}‖ ≥ ${Math.round(c.r)}   ∀ i`;
+    case 'anchor':     return `‖p_i(0) − s_i‖ ≤ ${Math.round(c.eps)}  ∧  ‖p_i(${K-1}) − e_i‖ ≤ ${Math.round(c.eps)}   ∀ i`;
+    case 'precede':{
+      const h = resolveHotspot(c);
+      const hl = h ? h.label : '(deleted hotspot)';
+      return `(‖c_${c.then} − ${hl}‖ > ${Math.round(c.r)}) U[0,${K-1}] (‖c_${c.first} − ${hl}‖ ≤ ${Math.round(c.r)})`;
+    }
+  }
+}
+function displayName(c){
+  switch(c.type){
+    case 'reach':      return `Hotspot ${c.label}`;
+    case 'together':   return 'Bundling';
+    case 'separation': return 'Separation';
+    case 'smooth':     return 'Smoothness';
+    case 'avoid':      return `Avoid ${c.label}`;
+    case 'anchor':     return 'Position correctness';
+    case 'precede':    return `Precedence ${c.first} → ${c.then}`;
+  }
+}
+
+/* ---------- exact robustness (verification) ---------- */
+function verifyConstraint(c){
+  let worst = Infinity, wit = null;
+  if(c.type === 'reach'){
+    for(const i of members(c)){
+      let best = -Infinity, bt = c.t1;
+      for(let t=c.t1; t<=c.t2; t++){
+        const k = idx(i,t);
+        const r = c.r - Math.hypot(P[k]-c.x, P[k+1]-c.y);
+        if(r > best){ best = r; bt = t; }
+      }
+      if(best < worst){ worst = best; wit = {i, t:bt}; }
+    }
+  } else if(c.type === 'together' || c.type === 'separation'){
+    const mem = members(c);
+    const t1 = c.t1 ?? 0, t2 = c.t2 ?? K-1;
+    for(let t=t1; t<=t2; t++){
+      for(let a=0;a<mem.length;a++) for(let b=a+1;b<mem.length;b++){
+        const i = mem[a], j = mem[b];
+        const d = Math.hypot(P[idx(i,t)]-P[idx(j,t)], P[idx(i,t)+1]-P[idx(j,t)+1]);
+        const r = c.type === 'together' ? c.dmax - d : d - c.dmin;
+        if(r < worst){ worst = r; wit = {i, j, t}; }
+      }
+    }
+  } else if(c.type === 'smooth'){
+    for(let i=0;i<N;i++){
+      for(let t=1;t<K-1;t++){
+        const k0=idx(i,t-1), k1=idx(i,t), k2=idx(i,t+1);
+        const ax = P[k2]-2*P[k1]+P[k0], ay = P[k2+1]-2*P[k1+1]+P[k0+1];
+        const r = c.amax - Math.hypot(ax,ay);
+        if(r < worst){ worst = r; wit = {i, t}; }
+      }
+    }
+  } else if(c.type === 'avoid'){
+    for(let i=0;i<N;i++){
+      for(let t=0;t<K;t++){
+        const k = idx(i,t);
+        const r = Math.hypot(P[k]-c.x, P[k+1]-c.y) - c.r;
+        if(r < worst){ worst = r; wit = {i, t}; }
+      }
+    }
+  } else if(c.type === 'anchor'){
+    for(let i=0;i<N;i++){
+      const o = objects[i];
+      for(const [t, ref] of [[0, o.start], [K-1, o.end]]){
+        const k = idx(i,t);
+        const r = c.eps - Math.hypot(P[k]-ref[0], P[k+1]-ref[1]);
+        if(r < worst){ worst = r; wit = {i, t}; }
+      }
+    }
+  } else if(c.type === 'precede'){
+    // ρ(φ U ψ) = max_t min( ψ(t), min_{s≤t} φ(s) )  — inclusive overlap, matching stljax
+    const h = resolveHotspot(c);
+    const A = groupMembers(c.first), B = groupMembers(c.then);
+    if(!h || !A.length || !B.length){ c.rho = null; c.witness = null; return; }
+    let runmin = Infinity, best = -Infinity, bt = 0;
+    for(let t=0;t<K;t++){
+      const [bx,by] = centroidAt(B,t);
+      const [ax,ay] = centroidAt(A,t);
+      const phi = Math.hypot(bx-h.x, by-h.y) - c.r;   // B's centroid stays out...
+      const psi = c.r - Math.hypot(ax-h.x, ay-h.y);   // ...until A's centroid arrives
+      if(phi < runmin) runmin = phi;
+      const v = Math.min(psi, runmin);
+      if(v > best){ best = v; bt = t; }
+    }
+    worst = best; wit = {t:bt, ids:[...A, ...B]};
+  }
+  c.rho = worst; c.witness = wit;
+}
+function verifyAll(){ for(const c of constraints) if(c.enabled) verifyConstraint(c); }
+
+/* ---------- smooth robustness losses + hand gradients ---------- */
+function gradReach(c){
+  let L = 0;
+  for(const i of members(c)){
+    const n = c.t2 - c.t1 + 1;
+    const rhos = new Float64Array(n);
+    let mx = -Infinity;
+    for(let t=c.t1; t<=c.t2; t++){
+      const k = idx(i,t);
+      const r = c.r - Math.hypot(P[k]-c.x, P[k+1]-c.y);
+      rhos[t-c.t1] = r; if(r > mx) mx = r;
+    }
+    let Z = 0;
+    for(let q=0;q<n;q++) Z += Math.exp((rhos[q]-mx)/TAUE);
+    let s = 0;
+    const ws = new Float64Array(n);
+    for(let q=0;q<n;q++){ ws[q] = Math.exp((rhos[q]-mx)/TAUE)/Z; s += ws[q]*rhos[q]; }
+    L += c.weight * TAU * softplus((MARGIN - s)/TAU);
+    const g = c.weight * sigmoid((MARGIN - s)/TAU);   // -dL/ds
+    for(let t=c.t1; t<=c.t2; t++){
+      const k = idx(i,t);
+      const dx = P[k]-c.x, dy = P[k+1]-c.y;
+      const d = Math.hypot(dx,dy) + 1e-9;
+      const coef = g * ws[t-c.t1] / d;                // dL/dp = g*w*(p-h)/d
+      G[k] += coef*dx; G[k+1] += coef*dy;
+    }
+  }
+  return L;
+}
+function gradPairwise(c){ // together / separation
+  let L = 0;
+  const mem = members(c);
+  const t1 = c.t1 ?? 0, t2 = c.t2 ?? K-1;
+  const isTogether = c.type === 'together';
+  const cutoff = MARGIN + TAU*7;
+  for(let t=t1; t<=t2; t++){
+    for(let a=0;a<mem.length;a++) for(let b=a+1;b<mem.length;b++){
+      const i = mem[a], j = mem[b];
+      const ki = idx(i,t), kj = idx(j,t);
+      const dx = P[ki]-P[kj], dy = P[ki+1]-P[kj+1];
+      const d = Math.hypot(dx,dy) + 1e-9;
+      const rho = isTogether ? c.dmax - d : d - c.dmin;
+      if(rho > cutoff) continue;
+      L += c.weight * TAU * softplus((MARGIN - rho)/TAU);
+      const g = c.weight * sigmoid((MARGIN - rho)/TAU);
+      const ux = dx/d, uy = dy/d;
+      // dρ/dp_i = ±u ;  dL/dρ = -g
+      const sgn = isTogether ? 1 : -1;   // together: dL/dp_i = +g*u ; separation: -g*u
+      G[ki]   += sgn*g*ux; G[ki+1] += sgn*g*uy;
+      G[kj]   -= sgn*g*ux; G[kj+1] -= sgn*g*uy;
+    }
+  }
+  return L;
+}
+function gradSmooth(c){
+  let L = 0;
+  for(let i=0;i<N;i++){
+    for(let t=1;t<K-1;t++){
+      const k0=idx(i,t-1), k1=idx(i,t), k2=idx(i,t+1);
+      const ax = P[k2]-2*P[k1]+P[k0], ay = P[k2+1]-2*P[k1+1]+P[k0+1];
+      const am = Math.hypot(ax,ay) + 1e-9;
+      const rho = c.amax - am;
+      if(rho > SMOOTH_MARGIN + 7) continue;
+      L += c.weight * softplus((SMOOTH_MARGIN - rho)/1.0);
+      const g = c.weight * sigmoid((SMOOTH_MARGIN - rho)/1.0);  // dL/d|a|
+      const ux = ax/am, uy = ay/am;
+      G[k0] += g*ux;   G[k0+1] += g*uy;
+      G[k1] -= 2*g*ux; G[k1+1] -= 2*g*uy;
+      G[k2] += g*ux;   G[k2+1] += g*uy;
+    }
+  }
+  return L;
+}
+function gradAvoid(c){
+  let L = 0;
+  const cutoff = MARGIN + TAU*7;
+  for(let i=0;i<N;i++){
+    for(let t=0;t<K;t++){
+      const k = idx(i,t);
+      const dx = P[k]-c.x, dy = P[k+1]-c.y;
+      const d = Math.hypot(dx,dy) + 1e-9;
+      const rho = d - c.r;
+      if(rho > cutoff) continue;
+      L += c.weight * TAU * softplus((MARGIN - rho)/TAU);
+      const g = c.weight * sigmoid((MARGIN - rho)/TAU);
+      G[k]   -= g*dx/d; G[k+1] -= g*dy/d;
+    }
+  }
+  return L;
+}
+
+function gradAnchor(c){
+  let L = 0;
+  for(let i=0;i<N;i++){
+    const o = objects[i];
+    for(const [t, ref] of [[0, o.start], [K-1, o.end]]){
+      const k = idx(i,t);
+      const dx = P[k]-ref[0], dy = P[k+1]-ref[1];
+      const d = Math.hypot(dx,dy) + 1e-9;
+      const rho = c.eps - d;
+      if(rho > MARGIN + TAU*7) continue;
+      L += c.weight * TAU * softplus((MARGIN - rho)/TAU);
+      const g = c.weight * sigmoid((MARGIN - rho)/TAU);
+      G[k] += g*dx/d; G[k+1] += g*dy/d;     // pull endpoint back toward the data
+    }
+  }
+  return L;
+}
+
+function gradPrecede(c){
+  // smooth robustness of (φ U ψ) with soft running-min / soft min / soft max,
+  // gradients routed through the softmax weights (same scheme stljax uses)
+  const h = resolveHotspot(c);
+  if(!h) return 0;
+  const A = groupMembers(c.first), B = groupMembers(c.then);
+  if(!A.length || !B.length) return 0;
+  const phi = new Float64Array(K), psi = new Float64Array(K);
+  const uax = new Float64Array(K), uay = new Float64Array(K);
+  const ubx = new Float64Array(K), uby = new Float64Array(K);
+  for(let t=0;t<K;t++){
+    const [bx,by] = centroidAt(B,t), [ax,ay] = centroidAt(A,t);
+    const dB = Math.hypot(bx-h.x, by-h.y) + 1e-9, dA = Math.hypot(ax-h.x, ay-h.y) + 1e-9;
+    phi[t] = dB - c.r;  psi[t] = c.r - dA;
+    ubx[t] = (bx-h.x)/dB; uby[t] = (by-h.y)/dB;
+    uax[t] = (ax-h.x)/dA; uay[t] = (ay-h.y)/dA;
+  }
+  // soft running min of φ over s ≤ t, with weight matrix Bw[t][s]
+  const Bw = new Float64Array(K*K), rm = new Float64Array(K);
+  for(let t=0;t<K;t++){
+    let mn = Infinity;
+    for(let s=0;s<=t;s++) if(phi[s] < mn) mn = phi[s];
+    let Z = 0;
+    for(let s=0;s<=t;s++) Z += Math.exp(-(phi[s]-mn)/TAU);
+    let v = 0;
+    for(let s=0;s<=t;s++){ const w = Math.exp(-(phi[s]-mn)/TAU)/Z; Bw[t*K+s] = w; v += w*phi[s]; }
+    rm[t] = v;
+  }
+  // soft min of (ψ(t), rm(t)), then soft max over t
+  const inner = new Float64Array(K), aPsi = new Float64Array(K);
+  for(let t=0;t<K;t++){
+    const mn = Math.min(psi[t], rm[t]);
+    const ep = Math.exp(-(psi[t]-mn)/TAU), er = Math.exp(-(rm[t]-mn)/TAU);
+    aPsi[t] = ep/(ep+er);
+    inner[t] = aPsi[t]*psi[t] + (1-aPsi[t])*rm[t];
+  }
+  let mx = -Infinity;
+  for(let t=0;t<K;t++) if(inner[t] > mx) mx = inner[t];
+  let Z = 0;
+  for(let t=0;t<K;t++) Z += Math.exp((inner[t]-mx)/TAUE);
+  const wt = new Float64Array(K);
+  let s = 0;
+  for(let t=0;t<K;t++){ wt[t] = Math.exp((inner[t]-mx)/TAUE)/Z; s += wt[t]*inner[t]; }
+  const L = c.weight * TAU * softplus((MARGIN - s)/TAU);
+  const g = c.weight * sigmoid((MARGIN - s)/TAU);    // -dL/ds
+  // dL/dφ(s) = -g Σ_{t≥s} wt[t](1-aPsi[t])Bw[t][s] ;  dL/dψ(t) = -g wt[t] aPsi[t]
+  const dphi = new Float64Array(K);
+  for(let t=0;t<K;t++){
+    const cf = wt[t]*(1-aPsi[t]);
+    if(cf < 1e-12) continue;
+    for(let ss=0;ss<=t;ss++) dphi[ss] += cf*Bw[t*K+ss];
+  }
+  for(let t=0;t<K;t++){
+    // ψ side: pulls group A (first) toward the hotspot
+    const cA = g*wt[t]*aPsi[t]/A.length;
+    if(cA > 1e-12) for(const i of A){ const k = idx(i,t); G[k] += cA*uax[t]; G[k+1] += cA*uay[t]; }
+    // φ side: pushes group B (then) away from the hotspot before A arrives
+    const cB = -g*dphi[t]/B.length;
+    if(Math.abs(cB) > 1e-12) for(const i of B){ const k = idx(i,t); G[k] += cB*ubx[t]; G[k+1] += cB*uby[t]; }
+  }
+  return L;
+}
+
+function solverStep(){
+  G.fill(0);
+  let L = 0;
+  for(const c of constraints){
+    if(!c.enabled) continue;
+    if(c.type === 'reach') L += gradReach(c);
+    else if(c.type === 'together' || c.type === 'separation') L += gradPairwise(c);
+    else if(c.type === 'smooth') L += gradSmooth(c);
+    else if(c.type === 'avoid') L += gradAvoid(c);
+    else if(c.type === 'anchor') L += gradAnchor(c);
+    else if(c.type === 'precede') L += gradPrecede(c);
+  }
+  // synthetic presets pin endpoints exactly; imported data uses the anchor spec instead
+  if(pinned) for(let i=0;i<N;i++){
+    G[idx(i,0)] = G[idx(i,0)+1] = 0;
+    G[idx(i,K-1)] = G[idx(i,K-1)+1] = 0;
+  }
+  // Adam
+  iter++;
+  // annealed step size: explore early, settle late (reheats on preset/reset since iter restarts)
+  const lr = 0.55 * Math.max(0.12, 1/(1 + iter/2500)), b1 = 0.9, b2 = 0.999, eps = 1e-8;
+  const c1 = 1 - Math.pow(b1, iter), c2 = 1 - Math.pow(b2, iter);
+  for(let k=0;k<P.length;k++){
+    adamM[k] = b1*adamM[k] + (1-b1)*G[k];
+    adamV[k] = b2*adamV[k] + (1-b2)*G[k]*G[k];
+    P[k] -= lr * (adamM[k]/c1) / (Math.sqrt(adamV[k]/c2) + eps);
+  }
+  lastLoss = L;
+}
+
+/* ================= presets ================= */
+function makeGroup(id, count, sx, sy, ex, ey){
+  return {id, color:PALETTE[id], count, start:{x:sx,y:sy}, end:{x:ex,y:ey}};
+}
+function basePreset(){
+  groups = [
+    makeGroup('A', 5, 70, 115, 750, 95),
+    makeGroup('B', 5, 70, 290, 750, 295),
+    makeGroup('C', 5, 70, 465, 750, 495),
+  ];
+  constraints = [
+    {id:'h1', type:'reach', label:'h1', x:285, y:265, r:30, t1:15, t2:23, groups:['A','B','C'], weight:3, enabled:true},
+    {id:'h2', type:'reach', label:'h2', x:545, y:300, r:30, t1:36, t2:44, groups:['A','B','C'], weight:3, enabled:true},
+    {id:'bun', type:'together', dmax:90, t1:19, t2:40, groups:['A','B','C'], weight:1.2, enabled:true},
+    {id:'sep', type:'separation', dmin:12, weight:2.5, enabled:true},
+    {id:'smo', type:'smooth', amax:4.5, weight:2.0, enabled:true},
+  ];
+  hsCounter = 2; avCounter = 0;
+}
+function detourPreset(){
+  groups = [
+    makeGroup('A', 5, 70, 115, 750, 95),
+    makeGroup('B', 5, 70, 290, 750, 295),
+    makeGroup('C', 5, 70, 465, 750, 495),
+  ];
+  constraints = [
+    {id:'h1', type:'reach', label:'h1', x:255, y:255, r:30, t1:13, t2:21, groups:['A','B','C'], weight:3, enabled:true},
+    {id:'h2', type:'reach', label:'h2', x:585, y:320, r:30, t1:39, t2:47, groups:['A','B','C'], weight:3, enabled:true},
+    {id:'r1', type:'avoid', label:'r1', x:420, y:300, r:78, weight:3, enabled:true},
+    {id:'bun', type:'together', dmax:95, t1:17, t2:43, groups:['A','B','C'], weight:1.2, enabled:true},
+    {id:'sep', type:'separation', dmin:12, weight:2.5, enabled:true},
+    {id:'smo', type:'smooth', amax:5.0, weight:2.0, enabled:true},
+  ];
+  hsCounter = 2; avCounter = 1;
+}
+function staggerPreset(){
+  groups = [
+    makeGroup('A', 6, 70, 150, 750, 120),
+    makeGroup('B', 6, 70, 430, 750, 450),
+  ];
+  constraints = [
+    {id:'h1', type:'reach', label:'h1', x:340, y:285, r:30, t1:12, t2:19, groups:['A'], weight:3, enabled:true},
+    {id:'h2', type:'reach', label:'h1*', x:340, y:285, r:30, t1:27, t2:34, groups:['B'], weight:3, enabled:true},
+    {id:'bunA', type:'together', dmax:70, t1:14, t2:45, groups:['A'], weight:1.2, enabled:true},
+    {id:'bunB', type:'together', dmax:70, t1:29, t2:52, groups:['B'], weight:1.2, enabled:true},
+    {id:'sep', type:'separation', dmin:12, weight:2.5, enabled:true},
+    {id:'smo', type:'smooth', amax:4.5, weight:2.0, enabled:true},
+  ];
+  hsCounter = 2; avCounter = 0;
+}
+function untilPreset(){
+  groups = [
+    makeGroup('A', 6, 70, 150, 750, 120),
+    makeGroup('B', 6, 70, 430, 750, 450),
+  ];
+  constraints = [
+    {id:'h1', type:'reach', label:'h1', x:340, y:285, r:30, t1:6, t2:52, groups:['A','B'], weight:3, enabled:true},
+    {id:'pre', type:'precede', first:'A', then:'B', hotspot:'h1', r:55, weight:3, enabled:true},
+    {id:'bunA', type:'together', dmax:70, t1:12, t2:46, groups:['A'], weight:1.2, enabled:true},
+    {id:'bunB', type:'together', dmax:70, t1:12, t2:46, groups:['B'], weight:1.2, enabled:true},
+    {id:'sep', type:'separation', dmin:12, weight:2.5, enabled:true},
+    {id:'smo', type:'smooth', amax:4.5, weight:2.0, enabled:true},
+  ];
+  hsCounter = 1; avCounter = 0;
+}
+const PRESETS = {default:basePreset, detour:detourPreset, stagger:staggerPreset, until:untilPreset};
+
+function loadPreset(name){
+  PRESETS[name]();
+  pinned = true;
+  makeObjects();
+  initTrajectories();
+  sel = null;
+  buildCards();
+}
+
+/* ================= rendering ================= */
+function catmull(a,b,c,d,t){
+  return b + 0.5*t*(c-a + t*(2*a-5*b+4*c-d + t*(3*(b-c)+d-a)));
+}
+function samplePos(arr, i, uu){
+  const t = clamp(uu, 0, K-1.0001);
+  const t0 = Math.floor(t), f = t-t0;
+  const km = idx(i, Math.max(0,t0-1)), k0 = idx(i,t0),
+        k1 = idx(i, Math.min(K-1,t0+1)), k2 = idx(i, Math.min(K-1,t0+2));
+  return [catmull(arr[km],arr[k0],arr[k1],arr[k2],f),
+          catmull(arr[km+1],arr[k0+1],arr[k1+1],arr[k2+1],f)];
+}
+
+function draw(){
+  // background
+  ctx.clearRect(0,0,W,H);
+  const bgg = ctx.createRadialGradient(W/2,H/2,80, W/2,H/2,560);
+  bgg.addColorStop(0,'#0e1526'); bgg.addColorStop(1,'#090d18');
+  ctx.fillStyle = bgg; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = 'rgba(255,255,255,.045)';
+  for(let x=40;x<W;x+=40) for(let y=40;y<H;y+=40){ ctx.fillRect(x-0.5,y-0.5,1.2,1.2); }
+
+  // avoid regions
+  for(const c of constraints){
+    if(c.type !== 'avoid' || !c.enabled) continue;
+    ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7);
+    ctx.fillStyle = 'rgba(255,93,108,.07)'; ctx.fill();
+    ctx.setLineDash([6,5]);
+    ctx.strokeStyle = sel===c ? '#ff9aa5' : 'rgba(255,93,108,.55)';
+    ctx.lineWidth = sel===c ? 2 : 1.2; ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,93,108,.8)';
+    ctx.font = '11px ui-monospace,Menlo,monospace'; ctx.textAlign='center';
+    ctx.fillText(`${c.label} · G ‖p−c‖ ≥ ${Math.round(c.r)}`, c.x, c.y - c.r - 7);
+  }
+
+  // ghost input trajectories
+  if(document.getElementById('showGhost').checked){
+    ctx.lineWidth = 1;
+    for(let i=0;i<N;i++){
+      ctx.beginPath();
+      for(let t=0;t<K;t++){
+        const k = idx(i,t);
+        t ? ctx.lineTo(P0[k],P0[k+1]) : ctx.moveTo(P0[k],P0[k+1]);
+      }
+      ctx.strokeStyle = 'rgba(160,170,185,.16)'; ctx.stroke();
+    }
+  }
+
+  // optimized routes (bundled ribbons)
+  if(document.getElementById('showPaths').checked){
+    ctx.lineWidth = 1.4;
+    for(let i=0;i<N;i++){
+      ctx.beginPath();
+      for(let s=0;s<=K-1;s+=0.5){
+        const [x,y] = samplePos(P,i,s);
+        s ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+      }
+      ctx.strokeStyle = objects[i].color + '14';
+      ctx.stroke();
+    }
+  }
+
+  // hotspots
+  const now = performance.now()/1000;
+  const labelSlots = {};   // stack labels of co-located hotspots instead of overdrawing
+  for(const c of constraints){
+    if(c.type !== 'reach' || !c.enabled) continue;
+    const slotKey = `${Math.round(c.x/60)},${Math.round(c.y/60)}`;
+    const slot = labelSlots[slotKey] || 0;
+    labelSlots[slotKey] = slot + 1;
+    const active = u >= c.t1 && u <= c.t2;
+    ctx.beginPath(); ctx.arc(c.x,c.y,c.r,0,7);
+    const hg = ctx.createRadialGradient(c.x,c.y,2,c.x,c.y,c.r);
+    hg.addColorStop(0,'rgba(125,211,252,.18)'); hg.addColorStop(1,'rgba(125,211,252,.02)');
+    ctx.fillStyle = hg; ctx.fill();
+    ctx.setLineDash([5,4]);
+    ctx.strokeStyle = sel===c ? '#dff3ff' : (active ? 'rgba(125,211,252,.95)' : 'rgba(125,211,252,.45)');
+    ctx.lineWidth = sel===c ? 2 : 1.3;
+    ctx.stroke(); ctx.setLineDash([]);
+    if(active){
+      const pr = c.r + 5 + 3.5*Math.sin(now*5);
+      ctx.beginPath(); ctx.arc(c.x,c.y,pr,0,7);
+      ctx.strokeStyle = 'rgba(125,211,252,.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(170,220,250,.9)';
+    ctx.font = '11px ui-monospace,Menlo,monospace'; ctx.textAlign='center';
+    ctx.fillText(`${c.label} · F[${c.t1},${c.t2}]`, c.x, c.y - c.r - 7 - slot*13);
+  }
+
+  // trails + dots
+  for(let i=0;i<N;i++){
+    const col = objects[i].color;
+    // trail
+    ctx.lineCap = 'round';
+    let prev = samplePos(P,i,u);
+    for(let s=1;s<=16;s++){
+      const uu = u - s*0.45;
+      if(uu < 0) break;
+      const pt = samplePos(P,i,uu);
+      const a = (1 - s/16);
+      ctx.beginPath();
+      ctx.moveTo(prev[0],prev[1]); ctx.lineTo(pt[0],pt[1]);
+      ctx.strokeStyle = col + Math.round(a*64).toString(16).padStart(2,'0');
+      ctx.lineWidth = 4.2*a + 0.4;
+      ctx.stroke();
+      prev = pt;
+    }
+    // dot
+    const [x,y] = samplePos(P,i,u);
+    ctx.save();
+    ctx.shadowColor = col; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(x,y,4.6,0,7);
+    ctx.fillStyle = col; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(x-1,y-1.2,1.7,0,7);
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fill();
+    ctx.restore();
+  }
+
+  // witness flash
+  if(flash && performance.now() < flash.until){
+    for(const i of flash.ids){
+      const [x,y] = samplePos(P,i,u);
+      ctx.beginPath(); ctx.arc(x,y,10 + 3*Math.sin(now*12),0,7);
+      ctx.strokeStyle = '#ffd479'; ctx.lineWidth = 2; ctx.stroke();
+    }
+  } else flash = null;
+
+  drawTimeline();
+}
+
+function drawTimeline(){
+  const tw = tl.clientWidth, th = tl.clientHeight;
+  if(tl.width !== tw*dpr){ tl.width = tw*dpr; tl.height = th*dpr; }
+  tctx.setTransform(dpr,0,0,dpr,0,0);
+  tctx.clearRect(0,0,tw,th);
+  const x0 = 8, x1 = tw-8, xx = t => x0 + (x1-x0)*t/(K-1);
+  // windowed-spec bands
+  let lane = 0;
+  for(const c of constraints){
+    if(!c.enabled || (c.type!=='reach' && c.type!=='together')) continue;
+    const y = 5 + (lane%3)*7; lane++;
+    tctx.fillStyle = c.type==='reach' ? 'rgba(125,211,252,.45)' : 'rgba(179,136,255,.35)';
+    tctx.fillRect(xx(c.t1), y, Math.max(3, xx(c.t2)-xx(c.t1)), 4);
+  }
+  // track
+  tctx.fillStyle = '#2a3342';
+  tctx.fillRect(x0, th-7, x1-x0, 2);
+  // playhead
+  const px = xx(u);
+  tctx.fillStyle = '#e6edf3';
+  tctx.fillRect(px-1, 3, 2, th-6);
+  tctx.beginPath();
+  tctx.moveTo(px-4, th-3); tctx.lineTo(px+4, th-3); tctx.lineTo(px, th-9); tctx.closePath();
+  tctx.fillStyle = '#4fc3f7'; tctx.fill();
+}
+
+/* ================= UI: spec cards ================= */
+const cardsEl = document.getElementById('cards');
+const certEl = document.getElementById('cert');
+
+function buildCards(){
+  const order = {reach:0, avoid:1, precede:2, together:3, separation:4, smooth:5, anchor:6};
+  const sorted = [...constraints].sort((a,b)=>order[a.type]-order[b.type]);
+  cardsEl.innerHTML = sorted.map(c => {
+    const deletable = c.type==='reach' || c.type==='avoid' || c.type==='together' || c.type==='precede';
+    let params = '';
+    if(c.type==='precede'){
+      const gopts = sv => groups.map(g=>`<option value="${g.id}" ${sv===g.id?'selected':''}>${g.id}</option>`).join('');
+      const hopts = constraints.filter(x=>x.type==='reach')
+        .map(h=>`<option value="${h.id}" ${c.hotspot===h.id?'selected':''}>${h.label}</option>`).join('');
+      params = `
+      <div class="row">
+        <label>first <select data-k="first">${gopts(c.first)}</select></label>
+        <label>then <select data-k="then">${gopts(c.then)}</select></label>
+        <label>at <select data-k="hotspot">${hopts || '<option>—</option>'}</select></label>
+      </div>
+      <div class="row"><label>radius <input type="range" data-k="r" min="20" max="120" step="2" value="${c.r}"><span class="v">${Math.round(c.r)}</span></label></div>`;
+    }
+    if(c.type==='reach') params = `
+      <div class="row">
+        <label>window <input type="number" data-k="t1" value="${c.t1}" min="0" max="${K-1}"> –
+        <input type="number" data-k="t2" value="${c.t2}" min="0" max="${K-1}"></label>
+        <label>radius <input type="range" data-k="r" min="12" max="70" step="1" value="${c.r}"><span class="v">${Math.round(c.r)}</span></label>
+      </div>`;
+    if(c.type==='together') params = `
+      <div class="row">
+        <label>window <input type="number" data-k="t1" value="${c.t1}" min="0" max="${K-1}"> –
+        <input type="number" data-k="t2" value="${c.t2}" min="0" max="${K-1}"></label>
+        <label>δ<sub>max</sub> <input type="range" data-k="dmax" min="30" max="220" step="2" value="${c.dmax}"><span class="v">${Math.round(c.dmax)}</span></label>
+      </div>`;
+    if(c.type==='separation') params = `
+      <div class="row"><label>δ<sub>min</sub> <input type="range" data-k="dmin" min="4" max="30" step="1" value="${c.dmin}"><span class="v">${Math.round(c.dmin)}</span></label></div>`;
+    if(c.type==='smooth') params = `
+      <div class="row"><label>a<sub>max</sub> <input type="range" data-k="amax" min="1" max="10" step="0.25" value="${c.amax}"><span class="v">${c.amax.toFixed(1)}</span></label></div>`;
+    if(c.type==='avoid') params = `
+      <div class="row"><label>radius <input type="range" data-k="r" min="25" max="160" step="2" value="${c.r}"><span class="v">${Math.round(c.r)}</span></label></div>`;
+    if(c.type==='anchor') params = `
+      <div class="row"><label>ε <input type="range" data-k="eps" min="4" max="40" step="1" value="${c.eps}"><span class="v">${Math.round(c.eps)}</span></label></div>`;
+    const gchips = c.groups ? `<div class="row">groups: ${groups.map(g =>
+      `<button class="gchip ${c.groups.includes(g.id)?'on':''}" data-g="${g.id}"
+        style="${c.groups.includes(g.id)?`background:${g.color};border-color:${g.color}`:''}">${g.id}</button>`).join('')}</div>` : '';
+    return `
+    <div class="card ${sel===c?'sel':''}" data-id="${c.id}">
+      <div class="top">
+        <input type="checkbox" class="tgl" data-k="enabled" ${c.enabled?'checked':''} title="enable/disable this spec">
+        <span class="name">${displayName(c)} <span class="kind">${c.type}</span></span>
+        <span class="chip ok" id="chip-${c.id}">ρ —</span>
+        ${deletable?`<button class="del" title="delete spec">✕</button>`:''}
+      </div>
+      <div class="formula" id="formula-${c.id}">${formula(c)}</div>
+      ${params}
+      ${gchips}
+      <div class="row"><label>weight <input type="range" data-k="weight" min="0" max="6" step="0.25" value="${c.weight}"><span class="v">${c.weight.toFixed(2)}</span></label></div>
+      <div class="wit"><span id="wit-${c.id}">—</span><button class="wbtn" title="jump the playhead to the worst-case moment">show</button></div>
+    </div>`;
+  }).join('');
+}
+
+function handleParam(e){
+  const card = e.target.closest('.card'); if(!card) return;
+  const c = constraints.find(x => x.id === card.dataset.id); if(!c) return;
+  const k = e.target.dataset.k; if(!k) return;
+  if(k === 'enabled'){ c.enabled = e.target.checked; return; }
+  if(k === 'first' || k === 'then' || k === 'hotspot'){
+    c[k] = e.target.value;
+    document.getElementById('formula-'+c.id).textContent = formula(c);
+    return;
+  }
+  let v = parseFloat(e.target.value); if(isNaN(v)) return;
+  if(k === 't1') v = clamp(Math.round(v), 0, c.t2-1);
+  if(k === 't2') v = clamp(Math.round(v), c.t1+1, K-1);
+  c[k] = v;
+  reheat(3000);
+  const vs = e.target.parentElement.querySelector('.v');
+  if(vs) vs.textContent = (k==='amax'||k==='weight') ? v.toFixed(k==='weight'?2:1) : Math.round(v);
+  document.getElementById('formula-'+c.id).textContent = formula(c);
+}
+cardsEl.addEventListener('input', handleParam);
+cardsEl.addEventListener('change', handleParam);
+cardsEl.addEventListener('click', e => {
+  const card = e.target.closest('.card'); if(!card) return;
+  const c = constraints.find(x => x.id === card.dataset.id); if(!c) return;
+  if(e.target.classList.contains('del')){
+    constraints = constraints.filter(x => x !== c);
+    if(sel === c) sel = null;
+    reheat(800); buildCards(); return;
+  }
+  if(e.target.classList.contains('gchip')){
+    const g = e.target.dataset.g;
+    if(c.groups.includes(g)){ if(c.groups.length>1) c.groups = c.groups.filter(x=>x!==g); }
+    else c.groups = [...c.groups, g];
+    buildCards(); return;
+  }
+  if(e.target.classList.contains('wbtn')){
+    if(c.witness){
+      u = c.witness.t; playing = false; updatePlayBtn();
+      const ids = c.witness.ids || [c.witness.i, c.witness.j].filter(x=>x!==undefined);
+      flash = {ids, until:performance.now()+1600};
+    }
+    return;
+  }
+  if(c.type==='reach' || c.type==='avoid'){ sel = c; buildCards(); }
+});
+
+function updateUI(){
+  let worst = Infinity, worstC = null, nbad = 0, nen = 0, vio = 0;
+  for(const c of constraints){
+    if(!c.enabled) continue;
+    const chip = document.getElementById('chip-'+c.id);
+    const wit = document.getElementById('wit-'+c.id);
+    if(c.rho == null){   // unresolved spec (e.g. precedence whose hotspot was deleted)
+      if(chip){ chip.textContent = 'ρ —'; chip.className = 'chip'; }
+      if(wit) wit.textContent = 'unresolved — pick a hotspot and two groups';
+      continue;
+    }
+    nen++;
+    vio += Math.max(0, -c.rho);
+    if(!chip) continue;
+    const ok = c.rho >= 0;
+    chip.textContent = 'ρ ' + fmt(c.rho);
+    chip.className = 'chip ' + (ok?'ok':'bad');
+    if(!ok) nbad++;
+    if(c.rho < worst){ worst = c.rho; worstC = c; }
+    if(wit && c.witness){
+      const w = c.witness;
+      wit.textContent = w.ids
+        ? `worst margin @ t=${w.t} (group centroids)`
+        : `worst: obj ${w.i}${w.j!==undefined?(' & '+w.j):''} @ t=${w.t}`;
+    }
+  }
+  if(nbad === 0){
+    certEl.className = 'ok';
+    certEl.innerHTML = `✓ certificate: all ${nen} specs satisfied · min ρ = ${fmt(worst)} px
+      <span class="sub">every STL formula holds on the current animation (exact robustness)</span>`;
+  } else {
+    certEl.className = 'bad';
+    certEl.innerHTML = `✗ ${nbad}/${nen} specs violated · worst: ${displayName(worstC)} (ρ = ${fmt(worst)})
+      <span class="sub">keep the solver running, lower other weights, or relax this spec</span>`;
+  }
+  document.getElementById('iterInfo').textContent = `iter ${iter}`;
+  document.getElementById('lossInfo').textContent = vio === 0
+    ? `violation 0 (all margins met)` : `violation ${vio.toFixed(1)} px`;
+}
+
+/* ================= canvas interaction ================= */
+function toWorld(e){
+  const r = cv.getBoundingClientRect();
+  return [(e.clientX-r.left)*W/r.width, (e.clientY-r.top)*H/r.height];
+}
+cv.addEventListener('pointerdown', e => {
+  const [x,y] = toWorld(e);
+  if(mode === 'hotspot'){
+    hsCounter++;
+    const t = clamp(Math.round((K-1)*x/W), 4, K-5);
+    const dense = N > 20;             // wider defaults so dense datasets stay feasible
+    const hw = dense ? 7 : 4, rr = dense ? 38 : 30;
+    const c = {id:'h'+hsCounter+'_'+Date.now()%1e4, type:'reach', label:'h'+hsCounter,
+               x, y, r:rr, t1:Math.max(0,t-hw), t2:Math.min(K-1,t+hw),
+               groups:groups.map(g=>g.id), weight:3, enabled:true};
+    constraints.push(c); sel = c; setMode(null); reheat(800); buildCards(); return;
+  }
+  if(mode === 'avoid'){
+    avCounter++;
+    const c = {id:'r'+avCounter+'_'+Date.now()%1e4, type:'avoid', label:'r'+avCounter,
+               x, y, r:70, weight:3, enabled:true};
+    constraints.push(c); sel = c; setMode(null); reheat(800); buildCards(); return;
+  }
+  for(const c of constraints){
+    if((c.type==='reach'||c.type==='avoid') && c.enabled && Math.hypot(c.x-x,c.y-y) <= Math.max(c.r,28)){
+      dragC = c; sel = c; cv.setPointerCapture(e.pointerId); buildCards(); return;
+    }
+  }
+  if(sel){ sel = null; buildCards(); }
+});
+cv.addEventListener('pointermove', e => {
+  if(!dragC) return;
+  const [x,y] = toWorld(e);
+  dragC.x = clamp(x, 20, W-20); dragC.y = clamp(y, 20, H-20);
+  reheat(3000);
+});
+cv.addEventListener('pointerup', () => { dragC = null; });
+
+tl.addEventListener('pointerdown', e => {
+  scrubbing = true; tl.setPointerCapture(e.pointerId); scrub(e);
+});
+tl.addEventListener('pointermove', e => { if(scrubbing) scrub(e); });
+tl.addEventListener('pointerup', () => { scrubbing = false; });
+function scrub(e){
+  const r = tl.getBoundingClientRect();
+  u = clamp((e.clientX-r.left-8)/(r.width-16)*(K-1), 0, K-1);
+  playing = false; updatePlayBtn();
+}
+
+/* ================= import / export ================= */
+function pointsOf(arr, i){
+  const out = [];
+  for(let t=0;t<K;t++) out.push([+arr[idx(i,t)].toFixed(2), +arr[idx(i,t)+1].toFixed(2)]);
+  return out;
+}
+function sceneJSON(){
+  return {
+    version: 1, K, canvas: [W, H], pinned,
+    groups: groups.map(g => ({id:g.id, color:g.color, count:g.count, start:g.start, end:g.end})),
+    objects: objects.map((o,i) => ({group:o.g, points:pointsOf(P0,i)})),
+    optimized: objects.map((_,i) => pointsOf(P,i)),
+    constraints: constraints.map(c => { const {rho, witness, ...rest} = c; return rest; }),
+  };
+}
+function resampleTraj(pts, k){
+  if(pts.length < 2) pts = [pts[0]||[0,0], pts[0]||[0,0]];
+  const cum = [0];
+  for(let q=1;q<pts.length;q++)
+    cum.push(cum[q-1] + Math.hypot(pts[q][0]-pts[q-1][0], pts[q][1]-pts[q-1][1]));
+  const total = cum[cum.length-1] || 1;
+  const out = []; let seg = 0;
+  for(let s=0;s<k;s++){
+    const target = total*s/(k-1);
+    while(seg < pts.length-2 && cum[seg+1] < target) seg++;
+    const span = cum[seg+1]-cum[seg] || 1;
+    const f = clamp((target-cum[seg])/span, 0, 1);
+    out.push([pts[seg][0] + f*(pts[seg+1][0]-pts[seg][0]),
+              pts[seg][1] + f*(pts[seg+1][1]-pts[seg][1])]);
+  }
+  return out;
+}
+function fitToCanvas(trajs){
+  let mnx=Infinity, mny=Infinity, mxx=-Infinity, mxy=-Infinity;
+  for(const tr of trajs) for(const [x,y] of tr){
+    if(x<mnx)mnx=x; if(x>mxx)mxx=x; if(y<mny)mny=y; if(y>mxy)mxy=y;
+  }
+  const aw = W-130, ah = H-110;
+  const s = Math.min(aw/((mxx-mnx)||1), ah/((mxy-mny)||1));
+  const ox = 65 + (aw - s*(mxx-mnx))/2, oy = 55 + (ah - s*(mxy-mny))/2;
+  return trajs.map(tr => tr.map(([x,y]) => [ox + s*(x-mnx), oy + s*(y-mny)]));
+}
+function kmeans(X, k){
+  let cent = [];
+  const stride = Math.max(1, Math.floor(X.length/k));
+  for(let q=0;q<k;q++) cent.push([...X[Math.min(q*stride, X.length-1)]]);
+  let asg = new Array(X.length).fill(0);
+  for(let it=0;it<40;it++){
+    for(let i=0;i<X.length;i++){
+      let bd = Infinity;
+      for(let q=0;q<k;q++){
+        let d = 0;
+        for(let f=0;f<X[i].length;f++) d += (X[i][f]-cent[q][f])**2;
+        if(d < bd){ bd = d; asg[i] = q; }
+      }
+    }
+    for(let q=0;q<k;q++){
+      const memb = X.filter((_,i)=>asg[i]===q);
+      if(!memb.length){ cent[q] = [...X[Math.floor(Math.random()*X.length)]]; continue; }
+      cent[q] = memb[0].map((_,f)=> memb.reduce((a,m)=>a+m[f],0)/memb.length);
+    }
+  }
+  return asg;
+}
+function reheat(cap){ iter = Math.min(iter, cap); }   // restore annealing energy after spec edits
+function resetSolverState(){
+  adamM = new Float64Array(N*K*2); adamV = new Float64Array(N*K*2);
+  G = new Float64Array(N*K*2);
+  iter = 0; sel = null; u = 0;
+}
+function importRaw(trajs, providedGroups){
+  let pick = trajs.map((t,i)=>({t, g:providedGroups ? providedGroups[i] : null}))
+                  .filter(o => Array.isArray(o.t) && o.t.length >= 2);
+  const MAXN = 30;
+  if(pick.length > MAXN){
+    const out = [];
+    for(let q=0;q<MAXN;q++) out.push(pick[Math.floor(q*pick.length/MAXN)]);
+    pick = out;
+  }
+  let rs = pick.map(o => resampleTraj(o.t, K));
+  rs = fitToCanvas(rs);
+  const ids = ['A','B','C','D'];
+  let gids;
+  if(providedGroups && pick.every(o => o.g != null)){
+    gids = pick.map(o => String(o.g));
+  } else {
+    const Xf = rs.map(tr => [tr[0][0], tr[0][1], tr[K-1][0], tr[K-1][1]]);
+    const k = rs.length >= 16 ? 4 : (rs.length >= 8 ? 3 : 2);
+    const asg = kmeans(Xf, k);
+    // stable color order: clusters sorted by mean start-y
+    const meanY = [];
+    for(let q=0;q<k;q++){
+      const ys = rs.filter((_,i)=>asg[i]===q).map(tr=>tr[0][1]);
+      meanY.push(ys.length ? ys.reduce((a,b)=>a+b,0)/ys.length : Infinity);
+    }
+    const rank = meanY.map((y,q)=>[y,q]).sort((a,b)=>a[0]-b[0]).map(x=>x[1]);
+    gids = asg.map(q => ids[rank.indexOf(q)] || 'D');
+  }
+  const uniq = [...new Set(gids)].sort();
+  groups = uniq.map(id => {
+    const mem = rs.filter((_,i)=>gids[i]===id);
+    const mean = sel0 => {
+      const pts = mem.map(tr => tr[sel0 ? 0 : K-1]);
+      return {x: pts.reduce((a,p)=>a+p[0],0)/pts.length, y: pts.reduce((a,p)=>a+p[1],0)/pts.length};
+    };
+    return {id, color:PALETTE[id] || '#9aa7b8', count:mem.length, start:mean(true), end:mean(false)};
+  });
+  objects = rs.map((tr,i)=>({g:gids[i], color:PALETTE[gids[i]] || '#9aa7b8', start:tr[0], end:tr[K-1]}));
+  N = objects.length;
+  P = new Float64Array(N*K*2);
+  for(let i=0;i<N;i++) for(let t=0;t<K;t++){
+    P[idx(i,t)] = rs[i][t][0]; P[idx(i,t)+1] = rs[i][t][1];
+  }
+  P0 = P.slice();
+  constraints = [
+    {id:'anc', type:'anchor', eps:16, weight:2.5, enabled:true},
+    {id:'sep', type:'separation', dmin:10, weight:2.5, enabled:true},
+    {id:'smo', type:'smooth', amax:5.0, weight:3.0, enabled:true},
+  ];
+  hsCounter = 0; avCounter = 0;
+  pinned = false;          // real data: endpoint fidelity is the anchor spec, not a hard pin
+  resetSolverState();
+  document.getElementById('showGhost').checked = true;  // show the raw data for comparison
+  buildCards();
+}
+function importScene(j){
+  // arc-length resampling re-times a trajectory, so only use it when K differs
+  const flat = pts => pts.length === K ? pts : resampleTraj(pts, K);
+  groups = j.groups.map(g => ({id:g.id, color:g.color || PALETTE[g.id] || '#9aa7b8',
+    count:g.count || 1, start:g.start || {x:0,y:0}, end:g.end || {x:0,y:0}}));
+  objects = j.objects.map(o => {
+    const pts = o.points;
+    return {g:o.group, color:PALETTE[o.group] || '#9aa7b8', start:pts[0], end:pts[pts.length-1]};
+  });
+  N = objects.length;
+  P0 = new Float64Array(N*K*2); P = new Float64Array(N*K*2);
+  j.objects.forEach((o,i) => {
+    const r0 = flat(o.points);
+    const r1 = j.optimized && j.optimized[i] ? flat(j.optimized[i]) : r0;
+    for(let t=0;t<K;t++){
+      P0[idx(i,t)] = r0[t][0]; P0[idx(i,t)+1] = r0[t][1];
+      P[idx(i,t)]  = r1[t][0]; P[idx(i,t)+1]  = r1[t][1];
+    }
+  });
+  constraints = (j.constraints || []).map(c => ({...c}));
+  pinned = j.pinned !== undefined ? !!j.pinned : !constraints.some(c => c.type === 'anchor');
+  hsCounter = avCounter = 0;
+  for(const c of constraints){
+    const m = /^[hr](\d+)/.exec(c.label || '');
+    if(m && c.type==='reach') hsCounter = Math.max(hsCounter, +m[1]);
+    if(m && c.type==='avoid') avCounter = Math.max(avCounter, +m[1]);
+  }
+  resetSolverState();
+  buildCards();
+}
+function importSceneJSON(j){
+  if(Array.isArray(j)) return importRaw(j);                       // raw dataset: [[[x,y],...],...]
+  if(j.objects && j.constraints) return importScene(j);           // full scene
+  if(j.objects) return importRaw(j.objects.map(o=>o.points), j.objects.map(o=>o.group));
+  throw new Error('Unrecognized JSON format');
+}
+window.exportScene = () => JSON.stringify(sceneJSON());
+window.importSceneJSON = importSceneJSON;
+
+document.getElementById('exportBtn').onclick = () => {
+  const blob = new Blob([JSON.stringify(sceneJSON(), null, 1)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'stl_animation_scene.json';
+  a.click(); URL.revokeObjectURL(a.href);
+};
+document.getElementById('importBtn').onclick = () => document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange = e => {
+  const f = e.target.files[0]; if(!f) return;
+  f.text().then(t => importSceneJSON(JSON.parse(t)))
+   .catch(err => alert('Import failed: ' + err.message));
+  e.target.value = '';
+};
+
+/* ================= header controls ================= */
+const solveBtn = document.getElementById('solveBtn');
+const playBtn = document.getElementById('playBtn');
+function updatePlayBtn(){ playBtn.textContent = playing ? '⏸' : '▶'; }
+function setMode(m){
+  mode = m;
+  document.getElementById('addHotspot').className = m==='hotspot' ? 'armed' : '';
+  document.getElementById('addAvoid').className = m==='avoid' ? 'armed' : '';
+  cv.style.cursor = m ? 'copy' : 'crosshair';
+}
+document.getElementById('addHotspot').onclick = () => setMode(mode==='hotspot'?null:'hotspot');
+document.getElementById('addAvoid').onclick = () => setMode(mode==='avoid'?null:'avoid');
+solveBtn.onclick = () => {
+  solving = !solving;
+  solveBtn.textContent = solving ? '⏸ solver on' : '▶ solver off';
+  solveBtn.className = solving ? 'primary' : '';
+};
+playBtn.onclick = () => { playing = !playing; updatePlayBtn(); };
+document.getElementById('resetBtn').onclick = () => {
+  P.set(P0); adamM.fill(0); adamV.fill(0); iter = 0;
+};
+document.getElementById('regen').onclick = () => {
+  makeObjects(); initTrajectories(); buildCards();
+};
+document.getElementById('preset').onchange = e => {
+  const v = e.target.value;
+  if(v === 'birdmap'){
+    fetch('data/birdmap_raw.json').then(r => r.json()).then(j => importSceneJSON(j))
+      .catch(err => alert('Could not load dataset (serve over http, not file://): ' + err.message));
+    return;
+  }
+  document.getElementById('showGhost').checked = false;
+  loadPreset(v);
+};
+document.getElementById('addPrecede').onclick = () => {
+  const h = constraints.find(x => x.type === 'reach');
+  if(!h || groups.length < 2){
+    alert('Precedence needs at least one hotspot and two groups — place a hotspot first.');
+    return;
+  }
+  const c = {id:'pre_'+Date.now()%1e5, type:'precede',
+             first:groups[0].id, then:groups[1].id, hotspot:h.id,
+             r:Math.max(50, h.r+20), weight:3, enabled:true};
+  constraints.push(c); sel = null; reheat(800); buildCards();
+};
+window.addEventListener('keydown', e => {
+  if(e.code === 'Space' && e.target.tagName !== 'INPUT'){
+    e.preventDefault(); playing = !playing; updatePlayBtn();
+  }
+});
+
+/* ================= main loop ================= */
+let uiTick = 0, lastT = performance.now(), itersPerFrame = 25;
+function frame(now){
+  const dt = Math.min(0.05, (now-lastT)/1000); lastT = now;
+  if(solving){
+    const t0 = performance.now();
+    for(let s=0;s<itersPerFrame;s++) solverStep();
+    // adapt iteration count to a ~14 ms solver budget (large imported datasets)
+    const per = (performance.now()-t0)/itersPerFrame;
+    itersPerFrame = clamp(Math.round(0.7*itersPerFrame + 0.3*(14/Math.max(per,0.02))), 2, 40);
+  }
+  if(playing){
+    u += dt * (K-1)/6.5;             // ~6.5 s loop
+    if(u > K-1) u = 0;
+  }
+  document.getElementById('tlabel').textContent = `t = ${u.toFixed(1)} / ${K-1}`;
+  draw();
+  if(++uiTick % 6 === 0){ verifyAll(); updateUI(); }
+  if(iter % 500 === 0 && iter > 0 && uiTick % 6 === 0){
+    console.log(JSON.stringify({iter, loss:+lastLoss.toFixed(3),
+      rho:Object.fromEntries(constraints.filter(c=>c.enabled).map(c=>[c.id, +c.rho.toFixed(2)]))}));
+  }
+  requestAnimationFrame(frame);
+}
+
+loadPreset('default');
+verifyAll(); updateUI();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
