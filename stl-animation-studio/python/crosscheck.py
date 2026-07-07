@@ -59,6 +59,13 @@ def js_exact_rhos(scene, which="optimized"):
         elif t == "avoid":
             d = np.linalg.norm(P - [c["x"], c["y"]], axis=-1)
             rho = (d - c["r"]).min()
+        elif t == "follow":
+            mem = members(c)
+            if not mem or len(c.get("pts", [])) < 2:
+                continue
+            q = stl_core.resample_polyline(c["pts"], c["t2"] - c["t1"] + 1)
+            d = np.linalg.norm(P[mem][:, c["t1"]:c["t2"] + 1] - q[None], axis=-1)
+            rho = (c["r"] - d).min()
         elif t == "anchor":
             starts = np.array([o["points"][0] for o in objs])
             ends = np.array([o["points"][-1] for o in objs])
@@ -107,6 +114,12 @@ def compare(scene, which, label):
 def main():
     steps = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
     scene = stl_core.demo_scene()
+    # add a follow (drawn-path corridor) spec threading through both hotspots,
+    # so the cross-check also covers the path-following semantics
+    scene["constraints"].append(dict(
+        id="f1", type="follow", label="f1", r=70, t1=8, t2=52,
+        pts=[[70, 290], [285, 265], [545, 300], [750, 300]],
+        groups=["A", "B", "C"], weight=1.5, enabled=True))
 
     worst = compare(scene, None, "raw input trajectories")
 

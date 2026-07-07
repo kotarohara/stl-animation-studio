@@ -50,6 +50,20 @@ def pairs_of(idx):
     return [(idx[a], idx[b]) for a in range(len(idx)) for b in range(a + 1, len(idx))]
 
 
+def resample_polyline(pts, n):
+    """Arc-length resample a polyline to n evenly spaced points.
+
+    Matches the browser's resampleTraj (linear interpolation along cumulative
+    arc length), so follow-spec targets q(t) agree across implementations."""
+    P = np.asarray(pts, dtype=float)
+    if len(P) < 2:
+        P = np.vstack([P, P]) if len(P) else np.zeros((2, 2))
+    seg = np.linalg.norm(np.diff(P, axis=0), axis=1)
+    cum = np.concatenate([[0.0], np.cumsum(seg)])
+    tgt = np.linspace(0.0, cum[-1], n)
+    return np.stack([np.interp(tgt, cum, P[:, 0]), np.interp(tgt, cum, P[:, 1])], axis=-1)
+
+
 def build_terms(scene):
     """Compile each constraint into (exact_fn, soft_fn, weight, margin, name, id).
 
@@ -137,6 +151,25 @@ def build_terms(scene):
 
             f = Always(M_POS)
             ex, so = temporal(f, sig_fn, pointwise_interval=(0, K - 1))
+            terms.append((ex, so, c["weight"], MARGIN, name, cid))
+
+        elif t == "follow":
+            # moving corridor: G[t1,t2] ||p_i - q(t)|| <= r along a drawn path,
+            # q(t) = the path arc-length-resampled across the window
+            mem_l = members(scene, c)
+            if not mem_l or len(c.get("pts", [])) < 2:
+                continue
+            mem = jnp.array(mem_l)
+            t1, t2 = int(c["t1"]), int(c["t2"])
+            q = jnp.array(resample_polyline(c["pts"], t2 - t1 + 1))   # (T, 2)
+            r = c["r"]
+
+            def sig_fn(pos, mem=mem, q=q, r=r, t1=t1, t2=t2):
+                d = snorm(pos[t1:t2 + 1, mem, :] - q[:, None, :])     # (T, M)
+                return (r - d).T                                      # (M, T)
+
+            f = Always(M_POS)     # signal is already sliced to the window
+            ex, so = temporal(f, sig_fn, pointwise_interval=(0, t2 - t1))
             terms.append((ex, so, c["weight"], MARGIN, name, cid))
 
         elif t == "anchor":

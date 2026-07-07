@@ -34,6 +34,7 @@ object positions `p_i(t)`:
 | Smoothness | `G[1,K−1] ‖p̈_i‖ ≤ amax` | slow-in/slow-out |
 | Position correctness | `‖p_i(0)−s_i‖ ≤ ε ∧ ‖p_i(K−1)−e_i‖ ≤ ε` | endpoint fidelity (ε-tolerance) |
 | Avoid region | `G[0,K] ‖p_i − c‖ ≥ r` | *(not expressible in RouteFlow)* |
+| Follow path | `G[t1,t2] ‖p_i − q(t)‖ ≤ r` | *(not expressible in RouteFlow)* |
 | Precedence | `(‖c_B−h‖ > r) U[0,K] (‖c_A−h‖ ≤ r)` | *(not expressible in RouteFlow)* |
 
 The precedence spec is a true temporal-logic **Until** over group centroids: group B must
@@ -65,6 +66,11 @@ Two robustness computations run side by side:
   while the solver runs — the animation re-forms live; drag a circle's *rim* to resize it.
 - **+ precedence**: adds an Until ordering spec between two groups at a chosen hotspot.
 - **+ bundling**: adds an Always-together spec over an editable time window.
+- **✏ path**: draw a freehand path on the canvas — it becomes a *follow* spec
+  `G[t1,t2] ‖p_i − q(t)‖ ≤ r`, where q(t) is the stroke arc-length-resampled across the
+  time window (a moving corridor the group must ride; the window is inferred from the
+  stroke's horizontal extent, like hotspots). Drag the path to move it; a marker shows
+  q(t) at the playhead while the spec is active.
 - **⬚ groups**: lasso objects on the canvas to reassign them to a group (or a new one) —
   group-scoped specs update immediately.
 - Every spec is a card: enable/disable, weight, time window, thresholds, group membership.

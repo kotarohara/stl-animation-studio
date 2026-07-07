@@ -147,6 +147,7 @@
   <input type="file" id="fileInput" accept=".json,application/json" style="display:none">
   <button id="addHotspot" title="Click the canvas to place a hotspot (an Eventually-reach spec)">+ hotspot</button>
   <button id="addAvoid" title="Click the canvas to place a forbidden region (an Always-avoid spec)">+ avoid region</button>
+  <button id="addPath" title="Draw a path on the canvas that a group must follow (a moving-corridor spec)">✏ path</button>
   <button id="addPrecede" title="Add an Until-based ordering spec: one group must reach a hotspot before another">+ precedence</button>
   <button id="addBundle" title="Add a bundling (Always-together) spec over a time window">+ bundling</button>
   <button id="lassoBtn" title="Lasso objects on the canvas to (re)assign their group">⬚ groups</button>
@@ -213,10 +214,12 @@ let u = 0;            // playhead in [0, K-1]
 let mode = null;      // 'hotspot' | 'avoid' | null
 let sel = null, dragC = null, scrubbing = false;
 let flash = null;     // {ids:[..], until}
-let hsCounter = 0, avCounter = 0;
+let hsCounter = 0, avCounter = 0, pathCounter = 0;
 let dragTL = null;    // timeline window drag: {c, kind:'t1'|'t2'|'move', grabT, t1_0, t2_0}
 let dragR = null;     // canvas radius (rim) drag
+let dragP = null;     // follow-path translate drag: {c, lx, ly}
 let lassoPts = null, lassoIds = null;   // group-lasso stroke and captured selection
+let pathPts = null;   // follow-path stroke being drawn
 let Pref = null;      // pinned A/B reference trajectories
 let dirty = false;    // autosave flag
 
@@ -240,11 +243,25 @@ function clampParam(c, k, v){
 // the time domain a spec constrains: [t0,t1], or null for anchor (endpoints only)
 function specDomain(c){
   switch(c.type){
-    case 'reach': case 'together':            return [c.t1 ?? 0, c.t2 ?? K-1];
+    case 'reach': case 'together': case 'follow': return [c.t1 ?? 0, c.t2 ?? K-1];
     case 'separation': case 'avoid': case 'precede': return [0, K-1];
     case 'smooth':                            return [1, K-2];
     case 'anchor':                            return null;
   }
+}
+// q(t) for a follow spec: its drawn stroke arc-length-resampled across the time window
+function followTargets(c){ return resampleTraj(c.pts, c.t2 - c.t1 + 1); }
+function followPointAt(c, uu){
+  const n = c.t2 - c.t1 + 1, q = followTargets(c);
+  const f = clamp(uu - c.t1, 0, n-1);
+  const t0 = Math.floor(f), fr = f - t0;
+  const a = q[t0], b = q[Math.min(n-1, t0+1)];
+  return [a[0] + fr*(b[0]-a[0]), a[1] + fr*(b[1]-a[1])];
+}
+function distToPath(c, x, y){
+  let mn = Infinity;
+  for(const [qx,qy] of resampleTraj(c.pts, 40)) mn = Math.min(mn, Math.hypot(qx-x, qy-y));
+  return mn;
 }
 
 /* ---------- user-study instrumentation ---------- */
@@ -389,6 +406,7 @@ function formulaParts(c, wrap){
     case 'separation': return `G[0,${K-1}] ‖p_i − p_j‖ ≥ ${w('dmin',Math.round(c.dmin))}   ∀ i ≠ j`;
     case 'smooth':     return `G[1,${K-2}] ‖p̈_i‖ ≤ ${w('amax',c.amax.toFixed(1))}   ∀ i`;
     case 'avoid':      return `G[0,${K-1}] ‖p_i − ${c.label}‖ ≥ ${w('r',Math.round(c.r))}   ∀ i`;
+    case 'follow':     return `G[${w('t1',c.t1)},${w('t2',c.t2)}] ‖p_i − ${c.label}(t)‖ ≤ ${w('r',Math.round(c.r))}   ∀ i ∈ ${groupStr(c)}`;
     case 'anchor':     return `‖p_i(0) − s_i‖ ≤ ${w('eps',Math.round(c.eps))}  ∧  ‖p_i(${K-1}) − e_i‖ ≤ ${w('eps',Math.round(c.eps))}   ∀ i`;
     case 'precede':{
       const h = resolveHotspot(c);
@@ -410,12 +428,12 @@ function applyFormulaText(c, text){
   // the threshold is always the last number, the window the first [a,b] bracket
   const thr = nums[nums.length-1];
   const set = {};
-  if(c.type === 'reach' || c.type === 'together'){
+  if(c.type === 'reach' || c.type === 'together' || c.type === 'follow'){
     const iv = text.match(/\[\s*(\d+)\s*,\s*(\d+)\s*\]/);
     if(!iv) return false;
     const t1 = +iv[1], t2 = +iv[2];
     if(!(t1 >= 0 && t2 > t1 && t2 <= K-1)) return false;
-    set.t1 = t1; set.t2 = t2; set[c.type === 'reach' ? 'r' : 'dmax'] = thr;
+    set.t1 = t1; set.t2 = t2; set[c.type === 'together' ? 'dmax' : 'r'] = thr;
   } else if(c.type === 'precede'){
     set.r = thr;
   } else {
@@ -439,6 +457,7 @@ function displayName(c){
     case 'separation': return 'Separation';
     case 'smooth':     return 'Smoothness';
     case 'avoid':      return `Avoid ${c.label}`;
+    case 'follow':     return `Path ${c.label}`;
     case 'anchor':     return 'Position correctness';
     case 'precede':    return `Precedence ${c.first} → ${c.then}`;
   }
@@ -482,6 +501,17 @@ function verifyConstraint(c){
       for(let t=0;t<K;t++){
         const k = idx(i,t);
         const r = Math.hypot(P[k]-c.x, P[k+1]-c.y) - c.r;
+        if(r < worst){ worst = r; wit = {i, t}; }
+      }
+    }
+  } else if(c.type === 'follow'){
+    const mem = members(c);
+    if(!mem.length || !c.pts || c.pts.length < 2){ c.rho = null; c.witness = null; return; }
+    const q = followTargets(c);
+    for(const i of mem){
+      for(let t=c.t1; t<=c.t2; t++){
+        const k = idx(i,t), qt = q[t-c.t1];
+        const r = c.r - Math.hypot(P[k]-qt[0], P[k+1]-qt[1]);
         if(r < worst){ worst = r; wit = {i, t}; }
       }
     }
@@ -606,6 +636,29 @@ function gradAvoid(c){
   return L;
 }
 
+function gradFollow(c){
+  // corridor spec: pointwise hinge on ρ(t) = r − ‖p_i(t) − q(t)‖ over the window,
+  // where q(t) is the drawn path arc-length-resampled across [t1, t2]
+  let L = 0;
+  const mem = members(c);
+  if(!mem.length || !c.pts || c.pts.length < 2) return 0;
+  const q = followTargets(c);
+  const cutoff = MARGIN + TAU*7;
+  for(const i of mem){
+    for(let t=c.t1; t<=c.t2; t++){
+      const k = idx(i,t), qt = q[t-c.t1];
+      const dx = P[k]-qt[0], dy = P[k+1]-qt[1];
+      const d = Math.hypot(dx,dy) + 1e-9;
+      const rho = c.r - d;
+      if(rho > cutoff) continue;
+      L += c.weight * TAU * softplus((MARGIN - rho)/TAU);
+      const g = c.weight * sigmoid((MARGIN - rho)/TAU);
+      G[k] += g*dx/d; G[k+1] += g*dy/d;    // pull toward the path point at this timestep
+    }
+  }
+  return L;
+}
+
 function gradAnchor(c){
   let L = 0;
   for(let i=0;i<N;i++){
@@ -696,6 +749,7 @@ function solverStep(){
     else if(c.type === 'together' || c.type === 'separation') L += gradPairwise(c);
     else if(c.type === 'smooth') L += gradSmooth(c);
     else if(c.type === 'avoid') L += gradAvoid(c);
+    else if(c.type === 'follow') L += gradFollow(c);
     else if(c.type === 'anchor') L += gradAnchor(c);
     else if(c.type === 'precede') L += gradPrecede(c);
   }
@@ -786,6 +840,7 @@ const PRESETS = {default:basePreset, detour:detourPreset, stagger:staggerPreset,
 
 function loadPreset(name){
   PRESETS[name]();
+  pathCounter = 0;
   pinned = true;
   makeObjects();
   initTrajectories();
@@ -829,6 +884,36 @@ function draw(){
     ctx.fillStyle = 'rgba(255,93,108,.8)';
     ctx.font = '11px ui-monospace,Menlo,monospace'; ctx.textAlign='center';
     ctx.fillText(`${c.label} · G ‖p−c‖ ≥ ${Math.round(c.r)}`, c.x, c.y - c.r - 7);
+  }
+
+  // follow-path corridors
+  const tnow = performance.now()/1000;
+  for(const c of constraints){
+    if(c.type !== 'follow' || !c.enabled || !c.pts || c.pts.length < 2) continue;
+    const q = resampleTraj(c.pts, 60);
+    const active = u >= c.t1 && u <= c.t2;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath();
+    q.forEach(([x,y],i) => i ? ctx.lineTo(x,y) : ctx.moveTo(x,y));
+    ctx.strokeStyle = 'rgba(45,212,160,.07)';   // the corridor tube itself
+    ctx.lineWidth = c.r*2;
+    ctx.stroke();
+    ctx.setLineDash([7,6]);
+    ctx.strokeStyle = sel===c ? 'rgba(170,255,225,.95)'
+                    : active ? 'rgba(45,212,160,.75)' : 'rgba(45,212,160,.4)';
+    ctx.lineWidth = sel===c ? 2 : 1.3;
+    ctx.beginPath();
+    q.forEach(([x,y],i) => i ? ctx.lineTo(x,y) : ctx.moveTo(x,y));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(140,235,200,.9)';
+    ctx.font = '11px ui-monospace,Menlo,monospace'; ctx.textAlign='center';
+    ctx.fillText(`${c.label} · G[${c.t1},${c.t2}]`, q[0][0], q[0][1] - c.r - 7);
+    if(active){   // the moving target q(t) the group should be near right now
+      const [px,py] = followPointAt(c, u);
+      ctx.beginPath(); ctx.arc(px, py, 5 + 1.5*Math.sin(tnow*5), 0, 7);
+      ctx.strokeStyle = 'rgba(45,212,160,.9)'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
   }
 
   // ghost input trajectories
@@ -963,6 +1048,15 @@ function draw(){
     ctx.setLineDash([]);
   }
 
+  // follow-path stroke being drawn
+  if(pathPts && pathPts.length > 1){
+    ctx.beginPath(); ctx.moveTo(pathPts[0][0], pathPts[0][1]);
+    for(const [x,y] of pathPts) ctx.lineTo(x,y);
+    ctx.strokeStyle = 'rgba(45,212,160,.9)'; ctx.lineWidth = 2;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.stroke();
+  }
+
   drawTimeline();
 }
 
@@ -971,7 +1065,7 @@ function draw(){
    reach/together bands are draggable (edges = t1/t2, middle = slide). */
 const TL_LABEL = 118, TL_LANE = 13, TL_TOP = 4, TL_TRACK = 18;
 let tlLanes = [];   // hit boxes rebuilt every frame: {c, y, h, bx0, bx1, editable}
-const specOrder = {reach:0, avoid:1, precede:2, together:3, separation:4, smooth:5, anchor:6};
+const specOrder = {reach:0, avoid:1, follow:2, precede:3, together:4, separation:5, smooth:6, anchor:7};
 function enabledSpecsSorted(){
   return constraints.filter(c => c.enabled).sort((a,b) => specOrder[a.type]-specOrder[b.type]);
 }
@@ -996,7 +1090,7 @@ function drawTimeline(){
     tctx.fillStyle = sel === c ? '#e6edf3' : '#8b98a9';
     tctx.fillText(displayName(c).slice(0,17), TL_LABEL-8, yc);
     const dom = specDomain(c);
-    const editable = c.type === 'reach' || c.type === 'together';
+    const editable = c.type === 'reach' || c.type === 'together' || c.type === 'follow';
     if(dom){
       const active = u >= dom[0] && u <= dom[1];
       const bx0 = xx(dom[0]), bx1 = Math.max(xx(dom[1]), bx0+3);
@@ -1085,6 +1179,19 @@ function pointwiseMargins(c){
       for(let i=0;i<N;i++){ const k = idx(i,t); mn = Math.min(mn, Math.hypot(P[k]-c.x, P[k+1]-c.y) - c.r); }
       m[t] = mn;
     }
+  } else if(c.type === 'follow'){
+    const mem = members(c);
+    if(mem.length && c.pts && c.pts.length > 1){
+      const q = followTargets(c);
+      for(let t=c.t1; t<=c.t2; t++){
+        let mn = Infinity;
+        for(const i of mem){
+          const k = idx(i,t), qt = q[t-c.t1];
+          mn = Math.min(mn, c.r - Math.hypot(P[k]-qt[0], P[k+1]-qt[1]));
+        }
+        m[t] = mn;
+      }
+    }
   } else if(c.type === 'anchor'){
     for(const [t, key] of [[0,'start'],[K-1,'end']]){
       let mn = Infinity;
@@ -1153,10 +1260,10 @@ const cardsEl = document.getElementById('cards');
 const certEl = document.getElementById('cert');
 
 function buildCards(){
-  const order = {reach:0, avoid:1, precede:2, together:3, separation:4, smooth:5, anchor:6};
+  const order = {reach:0, avoid:1, follow:2, precede:3, together:4, separation:5, smooth:6, anchor:7};
   const sorted = [...constraints].sort((a,b)=>order[a.type]-order[b.type]);
   cardsEl.innerHTML = sorted.map(c => {
-    const deletable = c.type==='reach' || c.type==='avoid' || c.type==='together' || c.type==='precede';
+    const deletable = ['reach','avoid','follow','together','precede'].includes(c.type);
     let params = '';
     if(c.type==='precede'){
       const gopts = sv => groups.map(g=>`<option value="${g.id}" ${sv===g.id?'selected':''}>${g.id}</option>`).join('');
@@ -1188,6 +1295,12 @@ function buildCards(){
       <div class="row"><label>a<sub>max</sub> <input type="range" data-k="amax" min="1" max="10" step="0.25" value="${c.amax}"><span class="v">${c.amax.toFixed(1)}</span></label></div>`;
     if(c.type==='avoid') params = `
       <div class="row"><label>radius <input type="range" data-k="r" min="25" max="160" step="2" value="${c.r}"><span class="v">${Math.round(c.r)}</span></label></div>`;
+    if(c.type==='follow') params = `
+      <div class="row">
+        <label>window <input type="number" data-k="t1" value="${c.t1}" min="0" max="${K-1}"> –
+        <input type="number" data-k="t2" value="${c.t2}" min="0" max="${K-1}"></label>
+        <label>radius <input type="range" data-k="r" min="12" max="120" step="2" value="${c.r}"><span class="v">${Math.round(c.r)}</span></label>
+      </div>`;
     if(c.type==='anchor') params = `
       <div class="row"><label>ε <input type="range" data-k="eps" min="4" max="40" step="1" value="${c.eps}"><span class="v">${Math.round(c.eps)}</span></label></div>`;
     const gchips = c.groups ? `<div class="row">groups: ${groups.map(g =>
@@ -1383,6 +1496,11 @@ cv.addEventListener('pointerdown', e => {
     cv.setPointerCapture(e.pointerId);
     return;
   }
+  if(mode === 'path'){
+    pathPts = [[x,y]];
+    cv.setPointerCapture(e.pointerId);
+    return;
+  }
   if(mode === 'hotspot'){
     pushHistory('add');
     hsCounter++;
@@ -1416,6 +1534,15 @@ cv.addEventListener('pointerdown', e => {
       dragC = c; sel = c; cv.setPointerCapture(e.pointerId); buildCards(); return;
     }
   }
+  // follow paths last so wide corridors don't steal clicks meant for circles
+  for(const c of constraints){
+    if(c.type==='follow' && c.enabled && c.pts && c.pts.length > 1 &&
+       distToPath(c, x, y) <= Math.max(14, c.r*0.7)){
+      pushHistory('movepath:'+c.id);
+      dragP = {c, lx:x, ly:y};
+      sel = c; cv.setPointerCapture(e.pointerId); buildCards(); return;
+    }
+  }
   if(sel){ sel = null; buildCards(); }
 });
 cv.addEventListener('pointermove', e => {
@@ -1423,6 +1550,20 @@ cv.addEventListener('pointermove', e => {
     const [x,y] = toWorld(e);
     const last = lassoPts[lassoPts.length-1];
     if(Math.hypot(x-last[0], y-last[1]) > 4) lassoPts.push([x,y]);
+    return;
+  }
+  if(pathPts){
+    const [x,y] = toWorld(e);
+    const last = pathPts[pathPts.length-1];
+    if(Math.hypot(x-last[0], y-last[1]) > 4) pathPts.push([x,y]);
+    return;
+  }
+  if(dragP){
+    const [x,y] = toWorld(e);
+    const dx = x - dragP.lx, dy = y - dragP.ly;
+    dragP.lx = x; dragP.ly = y;
+    for(const p of dragP.c.pts){ p[0] += dx; p[1] += dy; }
+    reheat(3000); markDirty();
     return;
   }
   if(dragR){
@@ -1439,10 +1580,34 @@ cv.addEventListener('pointermove', e => {
 });
 cv.addEventListener('pointerup', e => {
   if(lassoPts){ finishLasso(e); return; }
+  if(pathPts){ finishPath(); return; }
+  if(dragP){ dragP = null; scheduleServerSolve(); logEvent('move_path'); return; }
   if(dragR){ dragR = null; scheduleServerSolve(); logEvent('resize_spec'); return; }
   if(dragC){ scheduleServerSolve(); logEvent('move_spec'); }
   dragC = null;
 });
+
+// turn a drawn stroke into a follow (corridor) spec: G[t1,t2] ‖p_i − q(t)‖ ≤ r,
+// with the window inferred from the stroke's horizontal extent (like hotspots)
+function finishPath(){
+  const pts = pathPts; pathPts = null;
+  setMode(null);
+  if(!pts || pts.length < 2) return;
+  let arc = 0;
+  for(let i=1;i<pts.length;i++) arc += Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]);
+  if(arc < 40){ logEvent('path_too_short'); return; }
+  pushHistory('add');
+  pathCounter++;
+  let a = Math.round((K-1)*pts[0][0]/W), b = Math.round((K-1)*pts[pts.length-1][0]/W);
+  if(b - a < 8){ a = 4; b = K-5; }        // vertical or right-to-left strokes: full window
+  const t1 = clamp(a, 0, K-10), t2 = clamp(b, t1+8, K-1);
+  const c = {id:'f'+pathCounter+'_'+Date.now()%1e4, type:'follow', label:'f'+pathCounter,
+             pts: pts.map(p => [+p[0].toFixed(1), +p[1].toFixed(1)]),
+             r: N > 20 ? 46 : 38, t1, t2,
+             groups: groups.map(g => g.id), weight:3, enabled:true};
+  constraints.push(c); sel = c; reheat(800); scheduleServerSolve();
+  logEvent('add_path'); buildCards();
+}
 
 // mirror a live-dragged param into the spec card without a full rebuild
 function syncCardParam(c, k){
@@ -1733,7 +1898,7 @@ function importRaw(trajs, providedGroups){
     {id:'sep', type:'separation', dmin:10, weight:2.5, enabled:true},
     {id:'smo', type:'smooth', amax:5.0, weight:3.0, enabled:true},
   ];
-  hsCounter = 0; avCounter = 0;
+  hsCounter = 0; avCounter = 0; pathCounter = 0;
   pinned = false;          // real data: endpoint fidelity is the anchor spec, not a hard pin
   resetSolverState();
   document.getElementById('showGhost').checked = true;  // show the raw data for comparison
@@ -1763,11 +1928,12 @@ function importScene(j){
   // defaulted missing t1/t2 to [0, K-1]; make that visible and editable)
   for(const c of constraints) if(c.type === 'together'){ c.t1 = c.t1 ?? 0; c.t2 = c.t2 ?? K-1; }
   pinned = j.pinned !== undefined ? !!j.pinned : !constraints.some(c => c.type === 'anchor');
-  hsCounter = avCounter = 0;
+  hsCounter = avCounter = pathCounter = 0;
   for(const c of constraints){
-    const m = /^[hr](\d+)/.exec(c.label || '');
+    const m = /^[hrf](\d+)/.exec(c.label || '');
     if(m && c.type==='reach') hsCounter = Math.max(hsCounter, +m[1]);
     if(m && c.type==='avoid') avCounter = Math.max(avCounter, +m[1]);
+    if(m && c.type==='follow') pathCounter = Math.max(pathCounter, +m[1]);
   }
   resetSolverState();
   buildCards();
@@ -1830,7 +1996,7 @@ async function serverSolve(){
         const line = buf.slice(0, nl); buf = buf.slice(nl+2);
         if(!line.startsWith('data:')) continue;
         const msg = JSON.parse(line.slice(5));
-        if(msg.positions && msg.positions.length === N && !(dragC || dragR || dragTL)){
+        if(msg.positions && msg.positions.length === N && !(dragC || dragR || dragP || dragTL)){
           for(let i=0;i<N;i++) for(let t=0;t<K;t++){
             P[idx(i,t)]   = msg.positions[i][t][0];
             P[idx(i,t)+1] = msg.positions[i][t][1];
@@ -1839,7 +2005,14 @@ async function serverSolve(){
         if(msg.type === 'progress')
           hint.textContent = `stljax: step ${msg.step}/${msg.total} · soft loss ${msg.loss.toFixed(1)}`;
         if(msg.type === 'done'){
-          hint.textContent = `stljax done (${msg.total} steps) · server-exact min ρ = ${fmt(msg.min_rho)}`;
+          // any spec the browser resolves but the server didn't optimize means the
+          // server-side implementation is missing/stale — surface it, don't certify past it
+          const serverIds = new Set((msg.specs || []).map(s => s.id));
+          const missing = constraints
+            .filter(c => c.enabled && c.rho != null && !serverIds.has(c.id))
+            .map(c => displayName(c));
+          hint.textContent = `stljax done (${msg.total} steps) · server-exact min ρ = ${fmt(msg.min_rho)}`
+            + (missing.length ? ` · ⚠ server skipped: ${missing.join(', ')}` : '');
           adamM.fill(0); adamV.fill(0);   // preview solver restarts cleanly from the server solution
           markDirty();
         }
@@ -1871,11 +2044,13 @@ function setMode(m){
   mode = m;
   document.getElementById('addHotspot').className = m==='hotspot' ? 'armed' : '';
   document.getElementById('addAvoid').className = m==='avoid' ? 'armed' : '';
+  document.getElementById('addPath').className = m==='path' ? 'armed' : '';
   document.getElementById('lassoBtn').className = m==='lasso' ? 'armed' : '';
-  cv.style.cursor = m==='lasso' ? 'cell' : m ? 'copy' : 'crosshair';
+  cv.style.cursor = m==='lasso' || m==='path' ? 'cell' : m ? 'copy' : 'crosshair';
 }
 document.getElementById('addHotspot').onclick = () => setMode(mode==='hotspot'?null:'hotspot');
 document.getElementById('addAvoid').onclick = () => setMode(mode==='avoid'?null:'avoid');
+document.getElementById('addPath').onclick = () => setMode(mode==='path'?null:'path');
 document.getElementById('lassoBtn').onclick = () => setMode(mode==='lasso'?null:'lasso');
 document.getElementById('addBundle').onclick = () => {
   pushHistory('add');
@@ -1998,7 +2173,7 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     e.shiftKey ? redo() : undo();
   } else if((e.key === 'Delete' || e.key === 'Backspace') && sel){
-    if(['reach','avoid','together','precede'].includes(sel.type)){
+    if(['reach','avoid','follow','together','precede'].includes(sel.type)){
       e.preventDefault();
       pushHistory('del:'+sel.id);
       constraints = constraints.filter(x => x !== sel);
@@ -2018,7 +2193,7 @@ function frame(now){
   // in stljax mode the JS solver only previews during drag gestures;
   // the authoritative solve streams in from the backend
   const jsSolverActive = solving &&
-    (backendSel.value === 'browser' || dragC || dragR || dragTL !== null);
+    (backendSel.value === 'browser' || dragC || dragR || dragP || dragTL !== null);
   if(jsSolverActive){
     const t0 = performance.now();
     for(let s=0;s<itersPerFrame;s++) solverStep();

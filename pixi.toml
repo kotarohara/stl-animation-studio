@@ -7,7 +7,7 @@ version = "0.1.0"
 
 [tasks]
 # STL Animation Studio — backend + pipeline (see stl-animation-studio/README.md)
-serve = "uvicorn server:app --app-dir stl-animation-studio/python --port 8642"
+serve = "uvicorn server:app --app-dir stl-animation-studio/python --port 8642 --reload"
 demo = "python stl-animation-studio/python/cli.py demo"
 optimize = "python stl-animation-studio/python/cli.py optimize"
 verify = "python stl-animation-studio/python/cli.py verify"

@@ -57,7 +57,23 @@ stljax pipeline (`stl-animation-studio/python/`). Ordered roughly by impact.
   retrace needs a params-as-arguments refactor that isn't worth it at this scale
   (noted in `stl_core.optimize_stream`'s docstring).
 
-## 4. Other suggestions
+## 4. Path following (user request, added after 1–3)
+
+- [x] **✏ path**: draw a freehand stroke on the canvas → a `follow` spec
+  `G[t1,t2] ‖p_i − q(t)‖ ≤ r`, with q(t) the stroke arc-length-resampled across the
+  window (constant speed along the drawn path). Window inferred from the stroke's
+  horizontal extent; falls back to the full timeline for vertical/reverse strokes.
+- [x] Canvas: corridor tube + dashed centerline, moving q(t) marker while active,
+  drag-to-translate; full card (window, radius, groups, weight), scrubbable formula,
+  DSL editing, timeline lane with draggable window, pointwise-margin plot, witness.
+- [x] Backend: `follow` term in `stl_core.build_terms` (windowed Always on the corridor
+  margin signal, `resample_polyline` matching the JS resampler); covered by
+  `pixi run crosscheck` (Δ = 0.0000) and verified live (browser ρ = server ρ = +2.65).
+- [x] Hardening found during this work: `pixi run serve` now uses `--reload`, and the
+  browser flags "⚠ server skipped: …" if the backend ever drops an enabled spec
+  (that's exactly how a stale server was caught).
+
+## 5. Other suggestions
 
 ### Assignment-aligned (GA2 Part 2.4 feature list)
 - [x] **Group definition UI**: ⬚ groups lasso — encircle objects on the canvas, assign
