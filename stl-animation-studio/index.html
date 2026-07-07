@@ -35,16 +35,40 @@
   main{flex:1; display:flex; min-height:0;}
   #stage{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:14px; min-width:0; gap:10px;}
   #cv{
-    width:min(100%, calc((100vh - 170px) * 1.4642)); max-width:980px;
+    width:min(100%, calc((100vh - 280px) * 1.4642)); max-width:980px;
     border-radius:14px; border:1px solid var(--line);
     box-shadow:0 14px 50px rgba(0,0,0,.45);
     cursor:crosshair;
   }
-  #transport{display:flex; align-items:center; gap:10px; width:min(100%,980px);}
+  #transport{display:flex; align-items:flex-start; gap:10px; width:min(100%,980px);}
   #playBtn{width:38px;}
-  #tl{flex:1; height:30px; border-radius:8px; background:var(--card); border:1px solid var(--line); cursor:pointer;}
+  #tl{flex:1; height:64px; border-radius:8px; background:var(--card); border:1px solid var(--line); cursor:pointer; touch-action:none;}
   #tlabel{color:var(--dim); font-size:12px; min-width:84px; text-align:right; font-variant-numeric:tabular-nums;}
-  #solverInfo{color:var(--dim); font-size:12px; width:min(100%,980px); display:flex; gap:14px; font-variant-numeric:tabular-nums;}
+  #rhoRow{display:none; gap:10px; width:min(100%,980px);}
+  #rhoRow.on{display:flex;}
+  #rhoRow .sp{width:38px; flex:none;}
+  #rhoPlot{flex:1; height:64px; border-radius:8px; background:var(--card); border:1px solid var(--line);}
+  #tlTip{
+    position:fixed; z-index:9; display:none; pointer-events:none; max-width:480px;
+    font:11.5px/1.4 ui-monospace,Menlo,monospace; color:#a9c7e8;
+    background:#10161f; border:1px solid var(--line); border-radius:6px; padding:5px 8px;
+  }
+  #lassoPop{
+    position:fixed; z-index:10; display:none; background:var(--card2); border:1px solid var(--line);
+    border-radius:9px; padding:8px 10px; font-size:12px; color:var(--dim);
+    box-shadow:0 8px 28px rgba(0,0,0,.5);
+  }
+  #lassoPop button{margin:4px 3px 0 0; padding:3px 10px; font-size:12px;}
+  .scrub{cursor:ew-resize; border-bottom:1px dotted #5b7ea3; color:#dff3ff;}
+  .scrub:hover{background:#182234;}
+  .formula[contenteditable]{outline:1px solid var(--accent); white-space:normal;}
+  header input[type=number]{
+    width:52px; background:var(--card); color:var(--ink); border:1px solid var(--line);
+    border-radius:8px; padding:5px 6px; font:inherit; font-size:13px;
+  }
+  #solverInfo{color:var(--dim); font-size:12px; width:min(100%,980px); display:flex; gap:14px; font-variant-numeric:tabular-nums; align-items:center;}
+  #solverInfo .grow{flex:1;}
+  #solverInfo button{padding:2px 8px; font-size:11.5px; border-radius:6px;}
   #panel{
     width:368px; border-left:1px solid var(--line); background:var(--panel);
     display:flex; flex-direction:column; min-height:0;
@@ -124,6 +148,13 @@
   <button id="addHotspot" title="Click the canvas to place a hotspot (an Eventually-reach spec)">+ hotspot</button>
   <button id="addAvoid" title="Click the canvas to place a forbidden region (an Always-avoid spec)">+ avoid region</button>
   <button id="addPrecede" title="Add an Until-based ordering spec: one group must reach a hotspot before another">+ precedence</button>
+  <button id="addBundle" title="Add a bundling (Always-together) spec over a time window">+ bundling</button>
+  <button id="lassoBtn" title="Lasso objects on the canvas to (re)assign their group">⬚ groups</button>
+  <label title="Number of objects (synthetic presets only)">N <input type="number" id="nCtl" min="2" max="60" step="1" value="15"></label>
+  <select id="backendSel" title="Where optimization runs: the in-browser JS solver, or the stljax backend (pixi run serve)">
+    <option value="browser">solver: browser</option>
+    <option value="stljax">solver: stljax</option>
+  </select>
   <button id="solveBtn" class="primary">⏸ solver on</button>
   <button id="resetBtn" title="Reset trajectories to the raw input data">reset</button>
   <label><input type="checkbox" id="showPaths" checked> routes</label>
@@ -137,7 +168,8 @@
       <canvas id="tl"></canvas>
       <span id="tlabel"></span>
     </div>
-    <div id="solverInfo"><span id="iterInfo">iter 0</span><span id="lossInfo">loss —</span><span id="hintInfo">tip: drag a hotspot while the solver runs — the animation re-forms live</span></div>
+    <div id="rhoRow"><div class="sp"></div><canvas id="rhoPlot"></canvas></div>
+    <div id="solverInfo"><span id="iterInfo">iter 0</span><span id="lossInfo">loss —</span><span id="hintInfo">tip: drag a hotspot while the solver runs — the animation re-forms live</span><span class="grow"></span><button id="pinBtn" title="Pin the current trajectories as a dashed A/B reference overlay (e.g. compare browser vs stljax solves)">⧉ pin A/B</button><button id="recBtn" title="Record the canvas to a video file">⏺ rec</button><button id="logBtn" title="Download the interaction log (user-study instrumentation)">⎙ log</button></div>
   </section>
   <aside id="panel">
     <div id="cert"></div>
@@ -147,9 +179,14 @@
       <b>ρ</b> is the exact robustness margin (px): <b>ρ &gt; 0 certifies</b> the animation satisfies the
       spec; ρ &lt; 0 points at the worst violation. The solver runs gradient descent on smooth robustness
       losses (stljax-style differentiable STL).
+      <br><b>edit</b>: drag spec bands on the timeline (edges = window, middle = slide) · drag a circle's rim
+      to resize · drag <span class="scrub">numbers</span> in formulas · double-click a formula to edit as text ·
+      <b>⌘Z</b> undo · <b>⌫</b> delete selected · <b>←/→</b> step playhead · <b>space</b> play/pause
     </div>
   </aside>
 </main>
+<div id="tlTip"></div>
+<div id="lassoPop"></div>
 
 <script>
 "use strict";
@@ -177,12 +214,97 @@ let mode = null;      // 'hotspot' | 'avoid' | null
 let sel = null, dragC = null, scrubbing = false;
 let flash = null;     // {ids:[..], until}
 let hsCounter = 0, avCounter = 0;
+let dragTL = null;    // timeline window drag: {c, kind:'t1'|'t2'|'move', grabT, t1_0, t2_0}
+let dragR = null;     // canvas radius (rim) drag
+let lassoPts = null, lassoIds = null;   // group-lasso stroke and captured selection
+let Pref = null;      // pinned A/B reference trajectories
+let dirty = false;    // autosave flag
 
 const idx = (i,t) => (i*K + t)*2;
 const sigmoid = x => 1/(1+Math.exp(-x));
 const softplus = x => x > 30 ? x : Math.log1p(Math.exp(x));
 const fmt = x => (x>=0?'+':'') + x.toFixed(1);
 const clamp = (x,a,b) => Math.max(a, Math.min(b,x));
+
+function clampParam(c, k, v){
+  if(k==='t1')     return clamp(Math.round(v), 0, c.t2-1);
+  if(k==='t2')     return clamp(Math.round(v), c.t1+1, K-1);
+  if(k==='r')      return clamp(v, c.type==='avoid' ? 25 : 10, c.type==='avoid' ? 200 : 120);
+  if(k==='dmax')   return clamp(v, 20, 260);
+  if(k==='dmin')   return clamp(v, 2, 40);
+  if(k==='amax')   return clamp(v, 0.5, 12);
+  if(k==='eps')    return clamp(v, 2, 60);
+  if(k==='weight') return clamp(v, 0, 6);
+  return v;
+}
+// the time domain a spec constrains: [t0,t1], or null for anchor (endpoints only)
+function specDomain(c){
+  switch(c.type){
+    case 'reach': case 'together':            return [c.t1 ?? 0, c.t2 ?? K-1];
+    case 'separation': case 'avoid': case 'precede': return [0, K-1];
+    case 'smooth':                            return [1, K-2];
+    case 'anchor':                            return null;
+  }
+}
+
+/* ---------- user-study instrumentation ---------- */
+const studyLog = [], sessionT0 = Date.now();
+function logEvent(type, data){
+  studyLog.push(Object.assign({t:+((Date.now()-sessionT0)/1000).toFixed(2), type}, data || {}));
+}
+
+/* ---------- undo / redo (spec + group edits) ---------- */
+let undoStack = [], redoStack = [], lastPush = {tag:'', t:0};
+function snapshot(){
+  return JSON.stringify({
+    groups,
+    assign: objects.map(o => o.g),
+    constraints: constraints.map(c => { const {rho, witness, ...rest} = c; return rest; }),
+    pinned,
+  });
+}
+// call BEFORE mutating; consecutive pushes with the same tag within 900 ms coalesce
+// into one undo step so slider/drag gestures don't flood the stack
+function pushHistory(tag){
+  markDirty();
+  const now = performance.now();
+  if(tag === lastPush.tag && now - lastPush.t < 900){ lastPush.t = now; return; }
+  lastPush = {tag, t: now};
+  undoStack.push(snapshot());
+  if(undoStack.length > 100) undoStack.shift();
+  redoStack.length = 0;
+}
+function restoreSnapshot(s){
+  const j = JSON.parse(s);
+  groups = j.groups;
+  j.assign.forEach((g,i) => { if(objects[i]){ objects[i].g = g; objects[i].color = PALETTE[g] || '#9aa7b8'; } });
+  constraints = j.constraints;
+  pinned = j.pinned;
+  sel = null;
+  reheat(800); markDirty(); scheduleServerSolve();
+  buildCards();
+}
+function undo(){
+  if(!undoStack.length) return;
+  redoStack.push(snapshot());
+  restoreSnapshot(undoStack.pop());
+  lastPush = {tag:'', t:0};
+  logEvent('undo');
+}
+function redo(){
+  if(!redoStack.length) return;
+  undoStack.push(snapshot());
+  restoreSnapshot(redoStack.pop());
+  lastPush = {tag:'', t:0};
+  logEvent('redo');
+}
+function clearHistory(){ undoStack.length = 0; redoStack.length = 0; lastPush = {tag:'', t:0}; }
+function markDirty(){ dirty = true; }
+function clearPin(){
+  Pref = null;
+  const b = document.getElementById('pinBtn');
+  if(b){ b.className = ''; b.textContent = '⧉ pin A/B'; }
+}
 
 /* ================= data generation ================= */
 function samplePoint(cx, cy, r, placed, minD){
@@ -258,20 +380,57 @@ function groupStr(c){
   if(!c.groups || c.groups.length === groups.length) return 'all';
   return c.groups.join(',');
 }
-function formula(c){
+// `wrap(key, text)` lets formulaHTML mark editable parameters; formula() renders plain text
+function formulaParts(c, wrap){
+  const w = wrap || ((k,v) => v);
   switch(c.type){
-    case 'reach':      return `F[${c.t1},${c.t2}] ‖p_i − ${c.label}‖ ≤ ${Math.round(c.r)}   ∀ i ∈ ${groupStr(c)}`;
-    case 'together':   return `G[${c.t1},${c.t2}] ‖p_i − p_j‖ ≤ ${Math.round(c.dmax)}   ∀ i,j ∈ ${groupStr(c)}`;
-    case 'separation': return `G[0,${K-1}] ‖p_i − p_j‖ ≥ ${Math.round(c.dmin)}   ∀ i ≠ j`;
-    case 'smooth':     return `G[1,${K-2}] ‖p̈_i‖ ≤ ${c.amax.toFixed(1)}   ∀ i`;
-    case 'avoid':      return `G[0,${K-1}] ‖p_i − ${c.label}‖ ≥ ${Math.round(c.r)}   ∀ i`;
-    case 'anchor':     return `‖p_i(0) − s_i‖ ≤ ${Math.round(c.eps)}  ∧  ‖p_i(${K-1}) − e_i‖ ≤ ${Math.round(c.eps)}   ∀ i`;
+    case 'reach':      return `F[${w('t1',c.t1)},${w('t2',c.t2)}] ‖p_i − ${c.label}‖ ≤ ${w('r',Math.round(c.r))}   ∀ i ∈ ${groupStr(c)}`;
+    case 'together':   return `G[${w('t1',c.t1)},${w('t2',c.t2)}] ‖p_i − p_j‖ ≤ ${w('dmax',Math.round(c.dmax))}   ∀ i,j ∈ ${groupStr(c)}`;
+    case 'separation': return `G[0,${K-1}] ‖p_i − p_j‖ ≥ ${w('dmin',Math.round(c.dmin))}   ∀ i ≠ j`;
+    case 'smooth':     return `G[1,${K-2}] ‖p̈_i‖ ≤ ${w('amax',c.amax.toFixed(1))}   ∀ i`;
+    case 'avoid':      return `G[0,${K-1}] ‖p_i − ${c.label}‖ ≥ ${w('r',Math.round(c.r))}   ∀ i`;
+    case 'anchor':     return `‖p_i(0) − s_i‖ ≤ ${w('eps',Math.round(c.eps))}  ∧  ‖p_i(${K-1}) − e_i‖ ≤ ${w('eps',Math.round(c.eps))}   ∀ i`;
     case 'precede':{
       const h = resolveHotspot(c);
       const hl = h ? h.label : '(deleted hotspot)';
-      return `(‖c_${c.then} − ${hl}‖ > ${Math.round(c.r)}) U[0,${K-1}] (‖c_${c.first} − ${hl}‖ ≤ ${Math.round(c.r)})`;
+      return `(‖c_${c.then} − ${hl}‖ > ${w('r',Math.round(c.r))}) U[0,${K-1}] (‖c_${c.first} − ${hl}‖ ≤ ${w('r',Math.round(c.r))})`;
     }
   }
+}
+function formula(c){ return formulaParts(c, null); }
+function formulaHTML(c){
+  return formulaParts(c, (k,v) => `<span class="scrub" data-sk="${k}" title="drag horizontally to edit ${k}">${v}</span>`);
+}
+// parse a text-edited formula back into the spec (mini STL DSL — each spec type has a
+// fixed shape, so the numbers carry all the information)
+function applyFormulaText(c, text){
+  const nums = (text.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+  if(!nums.length) return false;
+  // labels like "h1" contain digits, so position-based parsing is unreliable;
+  // the threshold is always the last number, the window the first [a,b] bracket
+  const thr = nums[nums.length-1];
+  const set = {};
+  if(c.type === 'reach' || c.type === 'together'){
+    const iv = text.match(/\[\s*(\d+)\s*,\s*(\d+)\s*\]/);
+    if(!iv) return false;
+    const t1 = +iv[1], t2 = +iv[2];
+    if(!(t1 >= 0 && t2 > t1 && t2 <= K-1)) return false;
+    set.t1 = t1; set.t2 = t2; set[c.type === 'reach' ? 'r' : 'dmax'] = thr;
+  } else if(c.type === 'precede'){
+    set.r = thr;
+  } else {
+    const key = {separation:'dmin', smooth:'amax', avoid:'r', anchor:'eps'}[c.type];
+    set[key] = thr;
+  }
+  pushHistory('dsl:'+c.id);
+  if(set.t2 !== undefined) c.t2 = clamp(Math.round(set.t2), 1, K-1);
+  if(set.t1 !== undefined) c.t1 = clampParam(c, 't1', set.t1);
+  if(set.t2 !== undefined) c.t2 = clampParam(c, 't2', set.t2);
+  for(const k of ['r','dmax','dmin','amax','eps']) if(set[k] !== undefined) c[k] = clampParam(c, k, set[k]);
+  reheat(2000); markDirty(); scheduleServerSolve();
+  logEvent('formula_edit', {id:c.id});
+  buildCards();
+  return true;
 }
 function displayName(c){
   switch(c.type){
@@ -631,6 +790,9 @@ function loadPreset(name){
   makeObjects();
   initTrajectories();
   sel = null;
+  clearHistory(); clearPin(); markDirty();
+  const nc = document.getElementById('nCtl');
+  if(nc) nc.value = N;
   buildCards();
 }
 
@@ -679,6 +841,25 @@ function draw(){
         t ? ctx.lineTo(P0[k],P0[k+1]) : ctx.moveTo(P0[k],P0[k+1]);
       }
       ctx.strokeStyle = 'rgba(160,170,185,.16)'; ctx.stroke();
+    }
+  }
+
+  // pinned A/B reference overlay (dashed amber): compare against the current solve
+  if(Pref && Pref.length === P.length){
+    ctx.setLineDash([5,4]); ctx.lineWidth = 1.1;
+    for(let i=0;i<N;i++){
+      ctx.beginPath();
+      for(let t=0;t<K;t++){
+        const k = idx(i,t);
+        t ? ctx.lineTo(Pref[k],Pref[k+1]) : ctx.moveTo(Pref[k],Pref[k+1]);
+      }
+      ctx.strokeStyle = 'rgba(255,212,121,.30)'; ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    for(let i=0;i<N;i++){
+      const [x,y] = samplePos(Pref,i,u);
+      ctx.beginPath(); ctx.arc(x,y,3,0,7);
+      ctx.strokeStyle = 'rgba(255,212,121,.8)'; ctx.lineWidth = 1.2; ctx.stroke();
     }
   }
 
@@ -762,33 +943,209 @@ function draw(){
     }
   } else flash = null;
 
+  // rim handle on the selected circle (drag to resize)
+  if(sel && (sel.type==='reach' || sel.type==='avoid') && sel.enabled){
+    const hx = sel.x + sel.r*Math.SQRT1_2, hy = sel.y - sel.r*Math.SQRT1_2;
+    ctx.beginPath(); ctx.arc(hx, hy, 4, 0, 7);
+    ctx.fillStyle = '#0d1117'; ctx.fill();
+    ctx.strokeStyle = sel.type==='reach' ? '#dff3ff' : '#ff9aa5';
+    ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  // group-lasso stroke
+  if(lassoPts && lassoPts.length > 1){
+    ctx.beginPath(); ctx.moveTo(lassoPts[0][0], lassoPts[0][1]);
+    for(const [x,y] of lassoPts) ctx.lineTo(x,y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(79,195,247,.08)'; ctx.fill();
+    ctx.setLineDash([4,4]);
+    ctx.strokeStyle = 'rgba(79,195,247,.8)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   drawTimeline();
 }
 
+/* Spec Gantt chart: one labeled lane per enabled spec, band = its time domain,
+   color = satisfaction status, ◆ = witness (worst-case) timestep.
+   reach/together bands are draggable (edges = t1/t2, middle = slide). */
+const TL_LABEL = 118, TL_LANE = 13, TL_TOP = 4, TL_TRACK = 18;
+let tlLanes = [];   // hit boxes rebuilt every frame: {c, y, h, bx0, bx1, editable}
+const specOrder = {reach:0, avoid:1, precede:2, together:3, separation:4, smooth:5, anchor:6};
+function enabledSpecsSorted(){
+  return constraints.filter(c => c.enabled).sort((a,b) => specOrder[a.type]-specOrder[b.type]);
+}
 function drawTimeline(){
+  const want = TL_TOP + Math.max(1, constraints.filter(c=>c.enabled).length)*TL_LANE + TL_TRACK + 2;
+  if(parseInt(tl.style.height) !== want) tl.style.height = want + 'px';
   const tw = tl.clientWidth, th = tl.clientHeight;
-  if(tl.width !== tw*dpr){ tl.width = tw*dpr; tl.height = th*dpr; }
+  if(tl.width !== Math.round(tw*dpr) || tl.height !== Math.round(th*dpr)){
+    tl.width = Math.round(tw*dpr); tl.height = Math.round(th*dpr);
+  }
   tctx.setTransform(dpr,0,0,dpr,0,0);
   tctx.clearRect(0,0,tw,th);
-  const x0 = 8, x1 = tw-8, xx = t => x0 + (x1-x0)*t/(K-1);
-  // windowed-spec bands
-  let lane = 0;
-  for(const c of constraints){
-    if(!c.enabled || (c.type!=='reach' && c.type!=='together')) continue;
-    const y = 5 + (lane%3)*7; lane++;
-    tctx.fillStyle = c.type==='reach' ? 'rgba(125,211,252,.45)' : 'rgba(179,136,255,.35)';
-    tctx.fillRect(xx(c.t1), y, Math.max(3, xx(c.t2)-xx(c.t1)), 4);
-  }
-  // track
+  const x0 = TL_LABEL, x1 = tw-10, xx = t => x0 + (x1-x0)*t/(K-1);
+  tlLanes = [];
+  tctx.textBaseline = 'middle';
+  enabledSpecsSorted().forEach((c, li) => {
+    const y = TL_TOP + li*TL_LANE, yc = y + TL_LANE/2;
+    const ok = c.rho == null ? null : c.rho >= 0;
+    const col = ok == null ? '#8b98a9' : ok ? '#2dd4a0' : '#ff5d6c';
+    tctx.font = '9.5px ui-monospace,Menlo,monospace';
+    tctx.textAlign = 'right';
+    tctx.fillStyle = sel === c ? '#e6edf3' : '#8b98a9';
+    tctx.fillText(displayName(c).slice(0,17), TL_LABEL-8, yc);
+    const dom = specDomain(c);
+    const editable = c.type === 'reach' || c.type === 'together';
+    if(dom){
+      const active = u >= dom[0] && u <= dom[1];
+      const bx0 = xx(dom[0]), bx1 = Math.max(xx(dom[1]), bx0+3);
+      tctx.fillStyle = col + (active ? '55' : '30');
+      tctx.fillRect(bx0, y+2.5, bx1-bx0, TL_LANE-5);
+      tctx.strokeStyle = col + (sel === c ? 'ff' : '88');
+      tctx.lineWidth = sel === c ? 1.5 : 1;
+      tctx.strokeRect(bx0+0.5, y+2.5, bx1-bx0-1, TL_LANE-5);
+      if(editable){
+        tctx.fillStyle = col;
+        tctx.fillRect(bx0, y+2, 2.5, TL_LANE-4);
+        tctx.fillRect(bx1-2.5, y+2, 2.5, TL_LANE-4);
+      }
+      tlLanes.push({c, y, h:TL_LANE, bx0, bx1, editable});
+    } else {  // anchor: endpoint fidelity at t=0 and t=K-1 only
+      for(const t of [0, K-1]){
+        tctx.beginPath(); tctx.arc(xx(t), yc, 3, 0, 7);
+        tctx.fillStyle = col; tctx.fill();
+      }
+      tlLanes.push({c, y, h:TL_LANE, bx0:xx(0)-4, bx1:xx(K-1)+4, editable:false});
+    }
+    if(c.witness && c.rho != null){
+      const wx = xx(c.witness.t);
+      tctx.beginPath();
+      tctx.moveTo(wx, yc-4.5); tctx.lineTo(wx+3.5, yc); tctx.lineTo(wx, yc+4.5); tctx.lineTo(wx-3.5, yc);
+      tctx.closePath();
+      tctx.fillStyle = c.rho < 0 ? '#ffd479' : col + 'cc';
+      tctx.fill();
+    }
+  });
+  // scrub track
+  const ty = th - TL_TRACK + 4;
   tctx.fillStyle = '#2a3342';
-  tctx.fillRect(x0, th-7, x1-x0, 2);
-  // playhead
+  tctx.fillRect(x0, ty+5, x1-x0, 2);
+  tctx.font = '8.5px ui-monospace,Menlo,monospace'; tctx.textAlign = 'center';
+  for(let t=0; t<K; t+=10){
+    tctx.fillStyle = '#2a3342'; tctx.fillRect(xx(t)-0.5, ty+2, 1, 8);
+    tctx.fillStyle = '#5b6c80'; tctx.fillText(t, xx(t), th-3);
+  }
+  // playhead spanning all lanes
   const px = xx(u);
-  tctx.fillStyle = '#e6edf3';
-  tctx.fillRect(px-1, 3, 2, th-6);
+  tctx.fillStyle = 'rgba(230,237,243,.9)';
+  tctx.fillRect(px-0.75, 2, 1.5, th-6);
   tctx.beginPath();
-  tctx.moveTo(px-4, th-3); tctx.lineTo(px+4, th-3); tctx.lineTo(px, th-9); tctx.closePath();
+  tctx.moveTo(px-4.5, th-2); tctx.lineTo(px+4.5, th-2); tctx.lineTo(px, th-9);
+  tctx.closePath();
   tctx.fillStyle = '#4fc3f7'; tctx.fill();
+}
+
+/* ---------- pointwise-margin plot for the selected spec ---------- */
+const rhoRow = document.getElementById('rhoRow');
+const rp = document.getElementById('rhoPlot'), rctx = rp.getContext('2d');
+// m(t) = the spec's pointwise robustness at t (min over objects/pairs); NaN where undefined
+function pointwiseMargins(c){
+  const m = new Float64Array(K).fill(NaN);
+  if(c.type === 'reach'){
+    const mem = members(c);
+    for(let t=0;t<K;t++){
+      let mn = Infinity;
+      for(const i of mem){ const k = idx(i,t); mn = Math.min(mn, c.r - Math.hypot(P[k]-c.x, P[k+1]-c.y)); }
+      m[t] = mem.length ? mn : NaN;
+    }
+  } else if(c.type === 'together' || c.type === 'separation'){
+    const mem = members(c);
+    if(mem.length > 1) for(let t=0;t<K;t++){
+      let mn = Infinity;
+      for(let a=0;a<mem.length;a++) for(let b=a+1;b<mem.length;b++){
+        const i = mem[a], j = mem[b];
+        const d = Math.hypot(P[idx(i,t)]-P[idx(j,t)], P[idx(i,t)+1]-P[idx(j,t)+1]);
+        mn = Math.min(mn, c.type==='together' ? c.dmax - d : d - c.dmin);
+      }
+      m[t] = mn;
+    }
+  } else if(c.type === 'smooth'){
+    for(let t=1;t<K-1;t++){
+      let mn = Infinity;
+      for(let i=0;i<N;i++){
+        const k0=idx(i,t-1), k1=idx(i,t), k2=idx(i,t+1);
+        mn = Math.min(mn, c.amax - Math.hypot(P[k2]-2*P[k1]+P[k0], P[k2+1]-2*P[k1+1]+P[k0+1]));
+      }
+      m[t] = mn;
+    }
+  } else if(c.type === 'avoid'){
+    for(let t=0;t<K;t++){
+      let mn = Infinity;
+      for(let i=0;i<N;i++){ const k = idx(i,t); mn = Math.min(mn, Math.hypot(P[k]-c.x, P[k+1]-c.y) - c.r); }
+      m[t] = mn;
+    }
+  } else if(c.type === 'anchor'){
+    for(const [t, key] of [[0,'start'],[K-1,'end']]){
+      let mn = Infinity;
+      for(let i=0;i<N;i++){
+        const k = idx(i,t), ref = objects[i][key];
+        mn = Math.min(mn, c.eps - Math.hypot(P[k]-ref[0], P[k+1]-ref[1]));
+      }
+      m[t] = mn;
+    }
+  } else if(c.type === 'precede'){
+    const h = resolveHotspot(c);
+    const A = groupMembers(c.first), B = groupMembers(c.then);
+    if(!h || !A.length || !B.length) return m;
+    let runmin = Infinity;
+    for(let t=0;t<K;t++){
+      const [bx,by] = centroidAt(B,t), [ax,ay] = centroidAt(A,t);
+      runmin = Math.min(runmin, Math.hypot(bx-h.x, by-h.y) - c.r);
+      m[t] = Math.min(c.r - Math.hypot(ax-h.x, ay-h.y), runmin);   // Until inner value
+    }
+  }
+  return m;
+}
+function drawRhoPlot(){
+  if(!sel || !sel.enabled){ rhoRow.className = ''; return; }
+  rhoRow.className = 'on';
+  const tw = rp.clientWidth, th = rp.clientHeight;
+  if(!tw) return;
+  if(rp.width !== Math.round(tw*dpr)){ rp.width = Math.round(tw*dpr); rp.height = Math.round(th*dpr); }
+  rctx.setTransform(dpr,0,0,dpr,0,0);
+  rctx.clearRect(0,0,tw,th);
+  const m = pointwiseMargins(sel);
+  const x0 = TL_LABEL, x1 = tw-10, xx = t => x0 + (x1-x0)*t/(K-1);
+  let lo = Infinity, hi = -Infinity;
+  for(const v of m){ if(!isNaN(v)){ lo = Math.min(lo,v); hi = Math.max(hi,v); } }
+  rctx.font = '10px ui-monospace,Menlo,monospace'; rctx.textAlign = 'left'; rctx.textBaseline = 'top';
+  rctx.fillStyle = '#8b98a9';
+  if(!isFinite(lo)){ rctx.fillText('no margin signal (unresolved spec)', x0, 6); return; }
+  rctx.fillText(`pointwise margin m(t) — ${displayName(sel)}`, 8, 4);
+  lo = Math.min(lo, -1); hi = Math.max(hi, 1);
+  const pad = 9, yy = v => pad + (hi-v)/(hi-lo)*(th-2*pad);
+  const dom = specDomain(sel);
+  if(dom){   // shade the spec's time domain
+    rctx.fillStyle = 'rgba(125,211,252,.06)';
+    rctx.fillRect(xx(dom[0]), 0, Math.max(2, xx(dom[1])-xx(dom[0])), th);
+  }
+  rctx.strokeStyle = '#3a4759'; rctx.setLineDash([3,3]);
+  rctx.beginPath(); rctx.moveTo(x0, yy(0)); rctx.lineTo(x1, yy(0)); rctx.stroke();
+  rctx.setLineDash([]);
+  rctx.lineWidth = 1.6;
+  for(let t=1;t<K;t++){
+    if(isNaN(m[t]) || isNaN(m[t-1])) continue;
+    rctx.strokeStyle = (m[t] >= 0 && m[t-1] >= 0) ? '#2dd4a0' : '#ff5d6c';
+    rctx.beginPath(); rctx.moveTo(xx(t-1), yy(m[t-1])); rctx.lineTo(xx(t), yy(m[t])); rctx.stroke();
+  }
+  for(let t=0;t<K;t++){    // isolated points (anchor endpoints)
+    if(isNaN(m[t]) || (t>0 && !isNaN(m[t-1])) || (t<K-1 && !isNaN(m[t+1]))) continue;
+    rctx.beginPath(); rctx.arc(xx(t), yy(m[t]), 2.5, 0, 7);
+    rctx.fillStyle = m[t] >= 0 ? '#2dd4a0' : '#ff5d6c'; rctx.fill();
+  }
+  const px = xx(u);
+  rctx.fillStyle = 'rgba(230,237,243,.5)'; rctx.fillRect(px-0.5, 0, 1, th);
 }
 
 /* ================= UI: spec cards ================= */
@@ -844,7 +1201,7 @@ function buildCards(){
         <span class="chip ok" id="chip-${c.id}">ρ —</span>
         ${deletable?`<button class="del" title="delete spec">✕</button>`:''}
       </div>
-      <div class="formula" id="formula-${c.id}">${formula(c)}</div>
+      <div class="formula" id="formula-${c.id}" title="drag numbers to edit · double-click to edit as text">${formulaHTML(c)}</div>
       ${params}
       ${gchips}
       <div class="row"><label>weight <input type="range" data-k="weight" min="0" max="6" step="0.25" value="${c.weight}"><span class="v">${c.weight.toFixed(2)}</span></label></div>
@@ -857,20 +1214,28 @@ function handleParam(e){
   const card = e.target.closest('.card'); if(!card) return;
   const c = constraints.find(x => x.id === card.dataset.id); if(!c) return;
   const k = e.target.dataset.k; if(!k) return;
-  if(k === 'enabled'){ c.enabled = e.target.checked; return; }
+  if(k === 'enabled'){
+    pushHistory('enable:'+c.id);
+    c.enabled = e.target.checked;
+    scheduleServerSolve();
+    logEvent('toggle_spec', {id:c.id, on:c.enabled});
+    return;
+  }
   if(k === 'first' || k === 'then' || k === 'hotspot'){
+    pushHistory('param:'+c.id+':'+k);
     c[k] = e.target.value;
-    document.getElementById('formula-'+c.id).textContent = formula(c);
+    scheduleServerSolve();
+    document.getElementById('formula-'+c.id).innerHTML = formulaHTML(c);
     return;
   }
   let v = parseFloat(e.target.value); if(isNaN(v)) return;
-  if(k === 't1') v = clamp(Math.round(v), 0, c.t2-1);
-  if(k === 't2') v = clamp(Math.round(v), c.t1+1, K-1);
+  pushHistory('param:'+c.id+':'+k);
+  v = clampParam(c, k, v);
   c[k] = v;
-  reheat(3000);
+  reheat(3000); scheduleServerSolve();
   const vs = e.target.parentElement.querySelector('.v');
   if(vs) vs.textContent = (k==='amax'||k==='weight') ? v.toFixed(k==='weight'?2:1) : Math.round(v);
-  document.getElementById('formula-'+c.id).textContent = formula(c);
+  document.getElementById('formula-'+c.id).innerHTML = formulaHTML(c);
 }
 cardsEl.addEventListener('input', handleParam);
 cardsEl.addEventListener('change', handleParam);
@@ -878,14 +1243,18 @@ cardsEl.addEventListener('click', e => {
   const card = e.target.closest('.card'); if(!card) return;
   const c = constraints.find(x => x.id === card.dataset.id); if(!c) return;
   if(e.target.classList.contains('del')){
+    pushHistory('del:'+c.id);
     constraints = constraints.filter(x => x !== c);
     if(sel === c) sel = null;
-    reheat(800); buildCards(); return;
+    reheat(800); scheduleServerSolve(); logEvent('delete_spec', {id:c.id, type:c.type});
+    buildCards(); return;
   }
   if(e.target.classList.contains('gchip')){
+    pushHistory('groups:'+c.id);
     const g = e.target.dataset.g;
     if(c.groups.includes(g)){ if(c.groups.length>1) c.groups = c.groups.filter(x=>x!==g); }
     else c.groups = [...c.groups, g];
+    reheat(1500); scheduleServerSolve();
     buildCards(); return;
   }
   if(e.target.classList.contains('wbtn')){
@@ -893,10 +1262,73 @@ cardsEl.addEventListener('click', e => {
       u = c.witness.t; playing = false; updatePlayBtn();
       const ids = c.witness.ids || [c.witness.i, c.witness.j].filter(x=>x!==undefined);
       flash = {ids, until:performance.now()+1600};
+      logEvent('show_witness', {id:c.id});
     }
     return;
   }
-  if(c.type==='reach' || c.type==='avoid'){ sel = c; buildCards(); }
+  // select any spec (shows its pointwise-margin plot; reach/avoid also highlight on canvas)
+  if(sel !== c && !e.target.closest('input,select,button,.scrub')){ sel = c; buildCards(); }
+});
+
+/* ---------- scrubbable numbers inside formulas ---------- */
+let scrubDrag = null;   // {c, k, x0, v0, card}
+cardsEl.addEventListener('pointerdown', e => {
+  const sp = e.target.closest('.scrub'); if(!sp) return;
+  const card = e.target.closest('.card'); if(!card) return;
+  const c = constraints.find(x => x.id === card.dataset.id); if(!c) return;
+  e.preventDefault();
+  pushHistory('param:'+c.id+':'+sp.dataset.sk);
+  scrubDrag = {c, k:sp.dataset.sk, x0:e.clientX, v0:+c[sp.dataset.sk], card};
+  sp.setPointerCapture(e.pointerId);
+});
+cardsEl.addEventListener('pointermove', e => {
+  if(!scrubDrag) return;
+  const {c, k, x0, v0, card} = scrubDrag;
+  const step = k === 'amax' ? 0.25 : 1;
+  let v = clampParam(c, k, v0 + Math.round((e.clientX - x0)/5)*step);
+  if(v === c[k]) return;
+  c[k] = v;
+  reheat(3000); markDirty();
+  const txt = k === 'amax' ? v.toFixed(1) : Math.round(v);
+  card.querySelectorAll(`.scrub[data-sk="${k}"]`).forEach(s => s.textContent = txt);
+  const inp = card.querySelector(`[data-k="${k}"]`);
+  if(inp){
+    inp.value = v;
+    const vs = inp.parentElement.querySelector('.v');
+    if(vs) vs.textContent = txt;
+  }
+});
+cardsEl.addEventListener('pointerup', () => {
+  if(!scrubDrag) return;
+  const {c} = scrubDrag; scrubDrag = null;
+  scheduleServerSolve();
+  const f = document.getElementById('formula-'+c.id);
+  if(f) f.innerHTML = formulaHTML(c);
+  logEvent('scrub_edit', {id:c.id});
+});
+
+/* ---------- formula-as-text editing (mini STL DSL) ---------- */
+cardsEl.addEventListener('dblclick', e => {
+  const f = e.target.closest('.formula'); if(!f) return;
+  const card = e.target.closest('.card'); if(!card) return;
+  const c = constraints.find(x => x.id === card.dataset.id); if(!c) return;
+  f.textContent = formula(c);                    // strip spans; edit raw text
+  f.setAttribute('contenteditable', 'plaintext-only');
+  if(!f.isContentEditable) f.setAttribute('contenteditable', 'true');
+  f.focus();
+  const done = () => {
+    f.removeAttribute('contenteditable');
+    f.innerHTML = formulaHTML(c);
+    f.onkeydown = f.onblur = null;
+  };
+  f.onkeydown = ev => {
+    if(ev.key === 'Enter'){
+      ev.preventDefault();
+      if(applyFormulaText(c, f.textContent)) done();
+      else { f.style.outline = '1px solid var(--bad)'; setTimeout(() => f.style.outline = '', 900); }
+    } else if(ev.key === 'Escape'){ done(); }
+  };
+  f.onblur = done;
 });
 
 function updateUI(){
@@ -946,7 +1378,13 @@ function toWorld(e){
 }
 cv.addEventListener('pointerdown', e => {
   const [x,y] = toWorld(e);
+  if(mode === 'lasso'){
+    lassoPts = [[x,y]];
+    cv.setPointerCapture(e.pointerId);
+    return;
+  }
   if(mode === 'hotspot'){
+    pushHistory('add');
     hsCounter++;
     const t = clamp(Math.round((K-1)*x/W), 4, K-5);
     const dense = N > 20;             // wider defaults so dense datasets stay feasible
@@ -954,39 +1392,224 @@ cv.addEventListener('pointerdown', e => {
     const c = {id:'h'+hsCounter+'_'+Date.now()%1e4, type:'reach', label:'h'+hsCounter,
                x, y, r:rr, t1:Math.max(0,t-hw), t2:Math.min(K-1,t+hw),
                groups:groups.map(g=>g.id), weight:3, enabled:true};
-    constraints.push(c); sel = c; setMode(null); reheat(800); buildCards(); return;
+    constraints.push(c); sel = c; setMode(null); reheat(800); scheduleServerSolve();
+    logEvent('add_hotspot'); buildCards(); return;
   }
   if(mode === 'avoid'){
+    pushHistory('add');
     avCounter++;
     const c = {id:'r'+avCounter+'_'+Date.now()%1e4, type:'avoid', label:'r'+avCounter,
                x, y, r:70, weight:3, enabled:true};
-    constraints.push(c); sel = c; setMode(null); reheat(800); buildCards(); return;
+    constraints.push(c); sel = c; setMode(null); reheat(800); scheduleServerSolve();
+    logEvent('add_avoid'); buildCards(); return;
+  }
+  // rim grab: resize the circle by dragging its edge
+  for(const c of constraints){
+    if((c.type==='reach'||c.type==='avoid') && c.enabled && Math.abs(Math.hypot(c.x-x,c.y-y) - c.r) <= 7){
+      pushHistory('radius:'+c.id);
+      dragR = c; sel = c; cv.setPointerCapture(e.pointerId); buildCards(); return;
+    }
   }
   for(const c of constraints){
     if((c.type==='reach'||c.type==='avoid') && c.enabled && Math.hypot(c.x-x,c.y-y) <= Math.max(c.r,28)){
+      pushHistory('move:'+c.id);
       dragC = c; sel = c; cv.setPointerCapture(e.pointerId); buildCards(); return;
     }
   }
   if(sel){ sel = null; buildCards(); }
 });
 cv.addEventListener('pointermove', e => {
+  if(lassoPts){
+    const [x,y] = toWorld(e);
+    const last = lassoPts[lassoPts.length-1];
+    if(Math.hypot(x-last[0], y-last[1]) > 4) lassoPts.push([x,y]);
+    return;
+  }
+  if(dragR){
+    const [x,y] = toWorld(e);
+    dragR.r = clampParam(dragR, 'r', Math.hypot(x-dragR.x, y-dragR.y));
+    reheat(3000); markDirty();
+    syncCardParam(dragR, 'r');
+    return;
+  }
   if(!dragC) return;
   const [x,y] = toWorld(e);
   dragC.x = clamp(x, 20, W-20); dragC.y = clamp(y, 20, H-20);
-  reheat(3000);
+  reheat(3000); markDirty();
 });
-cv.addEventListener('pointerup', () => { dragC = null; });
+cv.addEventListener('pointerup', e => {
+  if(lassoPts){ finishLasso(e); return; }
+  if(dragR){ dragR = null; scheduleServerSolve(); logEvent('resize_spec'); return; }
+  if(dragC){ scheduleServerSolve(); logEvent('move_spec'); }
+  dragC = null;
+});
 
-tl.addEventListener('pointerdown', e => {
-  scrubbing = true; tl.setPointerCapture(e.pointerId); scrub(e);
-});
-tl.addEventListener('pointermove', e => { if(scrubbing) scrub(e); });
-tl.addEventListener('pointerup', () => { scrubbing = false; });
-function scrub(e){
-  const r = tl.getBoundingClientRect();
-  u = clamp((e.clientX-r.left-8)/(r.width-16)*(K-1), 0, K-1);
-  playing = false; updatePlayBtn();
+// mirror a live-dragged param into the spec card without a full rebuild
+function syncCardParam(c, k){
+  const card = cardsEl.querySelector(`.card[data-id="${c.id}"]`); if(!card) return;
+  const txt = k === 'amax' ? c[k].toFixed(1) : Math.round(c[k]);
+  card.querySelectorAll(`.scrub[data-sk="${k}"]`).forEach(s => s.textContent = txt);
+  const inp = card.querySelector(`input[data-k="${k}"]`);
+  if(inp){
+    inp.value = c[k];
+    const vs = inp.parentElement.querySelector('.v');
+    if(vs) vs.textContent = txt;
+  }
 }
+
+/* ---------- group lasso ---------- */
+function pointInPoly(x, y, poly){
+  let inside = false;
+  for(let a=0, b=poly.length-1; a<poly.length; b=a++){
+    const [xa,ya] = poly[a], [xb,yb] = poly[b];
+    if((ya > y) !== (yb > y) && x < (xb-xa)*(y-ya)/(yb-ya)+xa) inside = !inside;
+  }
+  return inside;
+}
+// recompute the groups list after reassignment; keep constraints' group refs valid
+function rebuildGroups(){
+  const uniq = [...new Set(objects.map(o => o.g))].sort();
+  groups = uniq.map(id => {
+    const mem = objects.filter(o => o.g === id);
+    const mean = key => ({x: mem.reduce((a,o)=>a+o[key][0],0)/mem.length,
+                          y: mem.reduce((a,o)=>a+o[key][1],0)/mem.length});
+    return {id, color:PALETTE[id] || '#9aa7b8', count:mem.length, start:mean('start'), end:mean('end')};
+  });
+  for(const c of constraints){
+    if(c.groups){
+      c.groups = c.groups.filter(g => uniq.includes(g));
+      if(!c.groups.length) c.groups = [...uniq];
+    }
+    if(c.type === 'precede'){
+      if(!uniq.includes(c.first)) c.first = uniq[0];
+      if(!uniq.includes(c.then))  c.then  = uniq[uniq.length-1];
+    }
+  }
+}
+function finishLasso(e){
+  const pts = lassoPts; lassoPts = null;
+  setMode(null);
+  if(!pts || pts.length < 3) return;
+  const ids = [];
+  for(let i=0;i<N;i++){
+    const [x,y] = samplePos(P,i,u);
+    if(pointInPoly(x,y,pts)) ids.push(i);
+  }
+  if(!ids.length){ logEvent('lasso_empty'); return; }
+  lassoIds = ids;
+  flash = {ids, until: performance.now()+2500};
+  const pop = document.getElementById('lassoPop');
+  const used = new Set(groups.map(g => g.id));
+  const free = ['A','B','C','D'].find(g => !used.has(g));
+  pop.innerHTML = `<div>${ids.length} object${ids.length>1?'s':''} → group:</div>` +
+    groups.map(g => `<button data-gid="${g.id}" style="border-color:${g.color};color:${g.color}">${g.id}</button>`).join('') +
+    (free ? `<button data-gid="${free}" title="create a new group">+ ${free} (new)</button>` : '') +
+    `<button data-gid="">cancel</button>`;
+  pop.style.display = 'block';
+  pop.style.left = Math.min(e.clientX, innerWidth-230) + 'px';
+  pop.style.top = Math.min(e.clientY+8, innerHeight-120) + 'px';
+}
+document.getElementById('lassoPop').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  document.getElementById('lassoPop').style.display = 'none';
+  const gid = b.dataset.gid;
+  if(gid && lassoIds){
+    pushHistory('group-assign');
+    for(const i of lassoIds){
+      objects[i].g = gid;
+      objects[i].color = PALETTE[gid] || '#9aa7b8';
+    }
+    rebuildGroups();
+    reheat(1500); scheduleServerSolve();
+    logEvent('lasso_assign', {n:lassoIds.length, gid});
+    buildCards();
+  }
+  lassoIds = null;
+});
+
+/* timeline: scrub on the bottom track; on spec lanes, click selects, band edges drag
+   t1/t2, band middle slides the window, ◆ jumps to the witness */
+const tlTip = document.getElementById('tlTip');
+function tlHit(e){
+  const r = tl.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const x0 = TL_LABEL, x1 = r.width - 10;
+  const tAt = clamp((mx-x0)/(x1-x0)*(K-1), 0, K-1);
+  if(my > r.height - TL_TRACK) return {kind:'track', t:tAt};
+  for(const ln of tlLanes){
+    if(my < ln.y || my > ln.y + ln.h) continue;
+    const c = ln.c;
+    if(c.witness && c.rho != null && Math.abs(mx - (x0 + (x1-x0)*c.witness.t/(K-1))) < 5)
+      return {kind:'witness', c, t:tAt};
+    if(ln.editable && Math.abs(mx - ln.bx0) < 5) return {kind:'t1', c, t:tAt};
+    if(ln.editable && Math.abs(mx - ln.bx1) < 5) return {kind:'t2', c, t:tAt};
+    if(ln.editable && mx >= ln.bx0 && mx <= ln.bx1) return {kind:'move', c, t:tAt};
+    return {kind:'lane', c, t:tAt};
+  }
+  return {kind:'track', t:tAt};
+}
+function scrollCardIntoView(c){
+  const card = cardsEl.querySelector(`.card[data-id="${c.id}"]`);
+  if(card) card.scrollIntoView({block:'nearest', behavior:'smooth'});
+}
+tl.addEventListener('pointerdown', e => {
+  const h = tlHit(e);
+  tl.setPointerCapture(e.pointerId);
+  if(h.kind === 'track'){
+    scrubbing = true; u = h.t; playing = false; updatePlayBtn();
+    return;
+  }
+  if(sel !== h.c){ sel = h.c; buildCards(); scrollCardIntoView(h.c); }
+  if(h.kind === 'witness'){
+    u = h.c.witness.t; playing = false; updatePlayBtn();
+    const w = h.c.witness;
+    flash = {ids: w.ids || [w.i, w.j].filter(x => x !== undefined), until: performance.now()+1600};
+    logEvent('tl_witness', {id:h.c.id});
+    return;
+  }
+  if(h.kind === 't1' || h.kind === 't2' || h.kind === 'move'){
+    pushHistory('tl:'+h.c.id);
+    dragTL = {c:h.c, kind:h.kind, grabT:h.t, t1_0:h.c.t1, t2_0:h.c.t2};
+  }
+  logEvent('tl_select', {id:h.c.id, kind:h.kind});
+});
+tl.addEventListener('pointermove', e => {
+  if(scrubbing){ u = tlHit(e).t; return; }
+  if(dragTL){
+    const h = tlHit(e), c = dragTL.c;
+    if(dragTL.kind === 't1')      c.t1 = clamp(Math.round(h.t), 0, c.t2-1);
+    else if(dragTL.kind === 't2') c.t2 = clamp(Math.round(h.t), c.t1+1, K-1);
+    else {
+      const d = Math.round(h.t - dragTL.grabT), len = dragTL.t2_0 - dragTL.t1_0;
+      c.t1 = clamp(dragTL.t1_0 + d, 0, K-1-len);
+      c.t2 = c.t1 + len;
+    }
+    reheat(3000); markDirty();
+    syncCardParam(c, 't1'); syncCardParam(c, 't2');
+    return;
+  }
+  const h = tlHit(e);
+  tl.style.cursor = (h.kind==='t1' || h.kind==='t2') ? 'ew-resize'
+                  : h.kind==='move' ? 'grab'
+                  : h.c ? 'pointer' : 'col-resize';
+  if(h.c){
+    tlTip.style.display = 'block';
+    tlTip.textContent = `${displayName(h.c)} — ${formula(h.c)} · ρ ${h.c.rho == null ? '—' : fmt(h.c.rho)}`;
+    tlTip.style.left = Math.min(e.clientX+14, innerWidth-400) + 'px';
+    tlTip.style.top  = (e.clientY+16) + 'px';
+  } else tlTip.style.display = 'none';
+});
+tl.addEventListener('pointerup', () => {
+  scrubbing = false;
+  if(dragTL){
+    const c = dragTL.c; dragTL = null;
+    scheduleServerSolve();
+    const f = document.getElementById('formula-'+c.id);
+    if(f) f.innerHTML = formulaHTML(c);
+    logEvent('tl_window_edit', {id:c.id});
+  }
+});
+tl.addEventListener('pointerleave', () => { tlTip.style.display = 'none'; });
 
 /* ================= import / export ================= */
 function pointsOf(arr, i){
@@ -1057,6 +1680,9 @@ function resetSolverState(){
   adamM = new Float64Array(N*K*2); adamV = new Float64Array(N*K*2);
   G = new Float64Array(N*K*2);
   iter = 0; sel = null; u = 0;
+  clearHistory(); clearPin(); markDirty();
+  const nc = document.getElementById('nCtl');
+  if(nc) nc.value = N;
 }
 function importRaw(trajs, providedGroups){
   let pick = trajs.map((t,i)=>({t, g:providedGroups ? providedGroups[i] : null}))
@@ -1133,6 +1759,9 @@ function importScene(j){
     }
   });
   constraints = (j.constraints || []).map(c => ({...c}));
+  // schema normalization: bundling windows are always explicit (JS and Python both
+  // defaulted missing t1/t2 to [0, K-1]; make that visible and editable)
+  for(const c of constraints) if(c.type === 'together'){ c.t1 = c.t1 ?? 0; c.t2 = c.t2 ?? K-1; }
   pinned = j.pinned !== undefined ? !!j.pinned : !constraints.some(c => c.type === 'anchor');
   hsCounter = avCounter = 0;
   for(const c of constraints){
@@ -1157,13 +1786,81 @@ document.getElementById('exportBtn').onclick = () => {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = 'stl_animation_scene.json';
   a.click(); URL.revokeObjectURL(a.href);
+  logEvent('export');
 };
 document.getElementById('importBtn').onclick = () => document.getElementById('fileInput').click();
 document.getElementById('fileInput').onchange = e => {
   const f = e.target.files[0]; if(!f) return;
-  f.text().then(t => importSceneJSON(JSON.parse(t)))
+  f.text().then(t => { importSceneJSON(JSON.parse(t)); logEvent('import', {file:f.name}); })
    .catch(err => alert('Import failed: ' + err.message));
   e.target.value = '';
+};
+
+/* ================= stljax backend client ================= */
+/* "solver: stljax" ships the scene to the FastAPI backend (pixi run serve) and
+   streams intermediate trajectories back over SSE. The JS solver then acts only as a
+   low-latency preview during drag gestures; the authoritative solve is stljax. */
+const backendSel = document.getElementById('backendSel');
+let serverCtl = null, serverTimer = null;
+function scheduleServerSolve(delay = 500){
+  if(backendSel.value !== 'stljax') return;
+  clearTimeout(serverTimer);
+  serverTimer = setTimeout(serverSolve, delay);
+}
+async function serverSolve(){
+  if(backendSel.value !== 'stljax') return;
+  if(serverCtl) serverCtl.abort();
+  const ctl = serverCtl = new AbortController();
+  const hint = document.getElementById('hintInfo');
+  try{
+    hint.textContent = 'stljax: solving…';
+    const res = await fetch('api/optimize?steps=6000', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(sceneJSON()), signal: ctl.signal,
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    while(true){
+      const {done, value} = await reader.read();
+      if(done) break;
+      buf += dec.decode(value, {stream:true});
+      let nl;
+      while((nl = buf.indexOf('\n\n')) >= 0){
+        const line = buf.slice(0, nl); buf = buf.slice(nl+2);
+        if(!line.startsWith('data:')) continue;
+        const msg = JSON.parse(line.slice(5));
+        if(msg.positions && msg.positions.length === N && !(dragC || dragR || dragTL)){
+          for(let i=0;i<N;i++) for(let t=0;t<K;t++){
+            P[idx(i,t)]   = msg.positions[i][t][0];
+            P[idx(i,t)+1] = msg.positions[i][t][1];
+          }
+        }
+        if(msg.type === 'progress')
+          hint.textContent = `stljax: step ${msg.step}/${msg.total} · soft loss ${msg.loss.toFixed(1)}`;
+        if(msg.type === 'done'){
+          hint.textContent = `stljax done (${msg.total} steps) · server-exact min ρ = ${fmt(msg.min_rho)}`;
+          adamM.fill(0); adamV.fill(0);   // preview solver restarts cleanly from the server solution
+          markDirty();
+        }
+      }
+    }
+  }catch(err){
+    if(err.name !== 'AbortError')
+      hint.textContent = 'stljax backend unreachable — start it with `pixi run serve` (browser preview still active)';
+  }finally{
+    if(serverCtl === ctl) serverCtl = null;
+  }
+}
+backendSel.onchange = () => {
+  logEvent('backend', {mode: backendSel.value});
+  if(backendSel.value === 'stljax') scheduleServerSolve(0);
+  else {
+    clearTimeout(serverTimer);
+    if(serverCtl) serverCtl.abort();
+    document.getElementById('hintInfo').textContent =
+      'tip: drag a hotspot while the solver runs — the animation re-forms live';
+  }
 };
 
 /* ================= header controls ================= */
@@ -1174,31 +1871,106 @@ function setMode(m){
   mode = m;
   document.getElementById('addHotspot').className = m==='hotspot' ? 'armed' : '';
   document.getElementById('addAvoid').className = m==='avoid' ? 'armed' : '';
-  cv.style.cursor = m ? 'copy' : 'crosshair';
+  document.getElementById('lassoBtn').className = m==='lasso' ? 'armed' : '';
+  cv.style.cursor = m==='lasso' ? 'cell' : m ? 'copy' : 'crosshair';
 }
 document.getElementById('addHotspot').onclick = () => setMode(mode==='hotspot'?null:'hotspot');
 document.getElementById('addAvoid').onclick = () => setMode(mode==='avoid'?null:'avoid');
+document.getElementById('lassoBtn').onclick = () => setMode(mode==='lasso'?null:'lasso');
+document.getElementById('addBundle').onclick = () => {
+  pushHistory('add');
+  const c = {id:'bun_'+Date.now()%1e5, type:'together',
+             dmax:90, t1:Math.round((K-1)*0.25), t2:Math.round((K-1)*0.7),
+             groups:groups.map(g=>g.id), weight:1.2, enabled:true};
+  constraints.push(c); sel = c; reheat(800); scheduleServerSolve();
+  logEvent('add_bundle'); buildCards();
+};
+document.getElementById('nCtl').onchange = e => {
+  let n = clamp(Math.round(+e.target.value || N), 2, 60);
+  e.target.value = n;
+  if(!pinned){
+    alert('The N control applies to synthetic presets; imported datasets keep their own trajectories.');
+    e.target.value = N;
+    return;
+  }
+  const base = Math.floor(n/groups.length), extra = n - base*groups.length;
+  groups.forEach((g,q) => { g.count = base + (q < extra ? 1 : 0); });
+  makeObjects(); initTrajectories();
+  clearHistory(); clearPin(); markDirty(); scheduleServerSolve();
+  logEvent('set_n', {n});
+  buildCards();
+};
 solveBtn.onclick = () => {
   solving = !solving;
   solveBtn.textContent = solving ? '⏸ solver on' : '▶ solver off';
   solveBtn.className = solving ? 'primary' : '';
+  logEvent('solver_toggle', {on:solving});
 };
 playBtn.onclick = () => { playing = !playing; updatePlayBtn(); };
 document.getElementById('resetBtn').onclick = () => {
   P.set(P0); adamM.fill(0); adamV.fill(0); iter = 0;
+  markDirty(); scheduleServerSolve(); logEvent('reset');
 };
 document.getElementById('regen').onclick = () => {
-  makeObjects(); initTrajectories(); buildCards();
+  makeObjects(); initTrajectories();
+  clearHistory(); clearPin(); markDirty(); scheduleServerSolve();
+  logEvent('regen');
+  buildCards();
+};
+
+/* ---------- A/B pin · video export · study log ---------- */
+const pinBtn = document.getElementById('pinBtn');
+pinBtn.onclick = () => {
+  if(Pref){ clearPin(); }
+  else {
+    Pref = P.slice();
+    pinBtn.className = 'armed'; pinBtn.textContent = '⧉ pinned';
+  }
+  logEvent('pin_ab', {on:!!Pref});
+};
+const recBtn = document.getElementById('recBtn');
+let recorder = null;
+recBtn.onclick = () => {
+  if(recorder){ recorder.stop(); return; }
+  const mime = ['video/webm;codecs=vp9','video/webm','video/mp4']
+    .find(m => window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+  if(!mime){ alert('MediaRecorder is not supported in this browser.'); return; }
+  const chunks = [];
+  recorder = new MediaRecorder(cv.captureStream(60), {mimeType:mime, videoBitsPerSecond:8e6});
+  recorder.ondataavailable = ev => { if(ev.data.size) chunks.push(ev.data); };
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, {type:mime});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'stl_animation.' + (mime.includes('mp4') ? 'mp4' : 'webm');
+    a.click(); URL.revokeObjectURL(a.href);
+    recorder = null;
+    recBtn.className = ''; recBtn.textContent = '⏺ rec';
+    logEvent('record_stop');
+  };
+  recorder.start();
+  recBtn.className = 'armed'; recBtn.textContent = '⏹ stop';
+  logEvent('record_start');
+};
+document.getElementById('logBtn').onclick = () => {
+  const blob = new Blob(
+    [JSON.stringify({started:new Date(sessionT0).toISOString(), events:studyLog}, null, 1)],
+    {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'study_log.json';
+  a.click(); URL.revokeObjectURL(a.href);
 };
 document.getElementById('preset').onchange = e => {
   const v = e.target.value;
+  logEvent('preset', {name:v});
   if(v === 'birdmap'){
-    fetch('data/birdmap_raw.json').then(r => r.json()).then(j => importSceneJSON(j))
+    fetch('data/birdmap_raw.json').then(r => r.json()).then(j => { importSceneJSON(j); scheduleServerSolve(); })
       .catch(err => alert('Could not load dataset (serve over http, not file://): ' + err.message));
     return;
   }
   document.getElementById('showGhost').checked = false;
   loadPreset(v);
+  scheduleServerSolve();
 };
 document.getElementById('addPrecede').onclick = () => {
   const h = constraints.find(x => x.type === 'reach');
@@ -1206,14 +1978,36 @@ document.getElementById('addPrecede').onclick = () => {
     alert('Precedence needs at least one hotspot and two groups — place a hotspot first.');
     return;
   }
+  pushHistory('add');
   const c = {id:'pre_'+Date.now()%1e5, type:'precede',
              first:groups[0].id, then:groups[1].id, hotspot:h.id,
              r:Math.max(50, h.r+20), weight:3, enabled:true};
-  constraints.push(c); sel = null; reheat(800); buildCards();
+  constraints.push(c); sel = null; reheat(800); scheduleServerSolve();
+  logEvent('add_precede'); buildCards();
 };
 window.addEventListener('keydown', e => {
-  if(e.code === 'Space' && e.target.tagName !== 'INPUT'){
+  const tag = e.target.tagName;
+  if(tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+  if(e.code === 'Space'){
     e.preventDefault(); playing = !playing; updatePlayBtn();
+  } else if(e.key === 'ArrowLeft' || e.key === 'ArrowRight'){
+    e.preventDefault();
+    playing = false; updatePlayBtn();
+    u = clamp(u + (e.key === 'ArrowRight' ? 1 : -1)*(e.shiftKey ? 5 : 1), 0, K-1);
+  } else if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z'){
+    e.preventDefault();
+    e.shiftKey ? redo() : undo();
+  } else if((e.key === 'Delete' || e.key === 'Backspace') && sel){
+    if(['reach','avoid','together','precede'].includes(sel.type)){
+      e.preventDefault();
+      pushHistory('del:'+sel.id);
+      constraints = constraints.filter(x => x !== sel);
+      sel = null;
+      reheat(800); scheduleServerSolve(); logEvent('delete_spec_key');
+      buildCards();
+    }
+  } else if(e.key === 's'){
+    solveBtn.click();
   }
 });
 
@@ -1221,7 +2015,11 @@ window.addEventListener('keydown', e => {
 let uiTick = 0, lastT = performance.now(), itersPerFrame = 25;
 function frame(now){
   const dt = Math.min(0.05, (now-lastT)/1000); lastT = now;
-  if(solving){
+  // in stljax mode the JS solver only previews during drag gestures;
+  // the authoritative solve streams in from the backend
+  const jsSolverActive = solving &&
+    (backendSel.value === 'browser' || dragC || dragR || dragTL !== null);
+  if(jsSolverActive){
     const t0 = performance.now();
     for(let s=0;s<itersPerFrame;s++) solverStep();
     // adapt iteration count to a ~14 ms solver budget (large imported datasets)
@@ -1234,15 +2032,34 @@ function frame(now){
   }
   document.getElementById('tlabel').textContent = `t = ${u.toFixed(1)} / ${K-1}`;
   draw();
-  if(++uiTick % 6 === 0){ verifyAll(); updateUI(); }
+  if(++uiTick % 6 === 0){ verifyAll(); updateUI(); drawRhoPlot(); }
   if(iter % 500 === 0 && iter > 0 && uiTick % 6 === 0){
     console.log(JSON.stringify({iter, loss:+lastLoss.toFixed(3),
-      rho:Object.fromEntries(constraints.filter(c=>c.enabled).map(c=>[c.id, +c.rho.toFixed(2)]))}));
+      rho:Object.fromEntries(constraints.filter(c=>c.enabled && c.rho != null)
+        .map(c=>[c.id, +c.rho.toFixed(2)]))}));
   }
   requestAnimationFrame(frame);
 }
 
-loadPreset('default');
+/* ================= autosave + boot ================= */
+const AUTOSAVE_KEY = 'stlstudio_autosave_v1';
+setInterval(() => {
+  if(!dirty && !solving) return;
+  try{ localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(sceneJSON())); dirty = false; }
+  catch(e){ /* storage full/blocked — autosave is best-effort */ }
+}, 5000);
+window.addEventListener('beforeunload', () => {
+  try{ localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(sceneJSON())); }catch(e){}
+});
+
+let restored = false;
+try{
+  const s = localStorage.getItem(AUTOSAVE_KEY);
+  if(s){ importSceneJSON(JSON.parse(s)); restored = true; }
+}catch(e){ console.warn('autosave restore failed:', e); }
+if(!restored) loadPreset('default');
+else document.getElementById('hintInfo').textContent =
+  'restored your last session — pick a preset to start fresh';
 verifyAll(); updateUI();
 requestAnimationFrame(frame);
 </script>
