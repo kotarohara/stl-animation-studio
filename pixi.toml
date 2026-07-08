@@ -6,6 +6,12 @@ platforms = ["osx-arm64"]
 version = "0.1.0"
 
 [tasks]
+# STL Animation Studio — backend + pipeline (see stl-animation-studio/README.md)
+serve = "uvicorn server:app --app-dir stl-animation-studio/python --port 8642 --reload"
+demo = "python stl-animation-studio/python/cli.py demo"
+optimize = "python stl-animation-studio/python/cli.py optimize"
+verify = "python stl-animation-studio/python/cli.py verify"
+crosscheck = "python stl-animation-studio/python/crosscheck.py"
 
 [dependencies]
 jax = ">=0.7.2,<0.8"
@@ -15,6 +21,8 @@ numpy = ">=2.4.2,<3"
 matplotlib = ">=3.10.8,<4"
 scipy = ">=1.17.1,<2"
 jupyter = ">=1.1.1,<2"
+fastapi = ">=0.139.0,<0.140"
+uvicorn = ">=0.50.2,<0.51"
 
 [pypi-dependencies]
 pygame-ce = ">=2.5, <3"

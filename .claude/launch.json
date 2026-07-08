@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "stl-animation-studio",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8642", "--directory", "stl-animation-studio"],
+      "name": "stl-studio",
+      "runtimeExecutable": "pixi",
+      "runtimeArgs": ["run", "serve"],
       "port": 8642
     }
   ]
